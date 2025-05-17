@@ -2,6 +2,7 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,17 +18,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+@RequiredArgsConstructor
 @Service
 public class UsuarioServicio implements UserDetailsService {
-
-    @Autowired
     private UsuarioRepositorio usuarioRepositorio;
-
-    // --- NECESARIO: Inyectar PasswordEncoder ---
-    @Autowired
     private PasswordEncoder passwordEncoder;
-    // --- FIN Inyectar ---
-
 
     public Optional<User> findByUsername(String username) {
         return usuarioRepositorio.findByUsername(username);
