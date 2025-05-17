@@ -1,18 +1,25 @@
 package com.example.reservafutbol.Servicio;
 
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamSource;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
-import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayInputStream;
 
 @Service
 public class EmailService {
+
+    @Value("${backend.url}")
+    private String backendUrl;
+
+    @Value("${frontend.url}")
+    private String frontendUrl;
 
     @Autowired
     private JavaMailSender mailSender;
@@ -23,8 +30,7 @@ public class EmailService {
             message.setTo(to);
             message.setSubject("Valida tu cuenta en ¿Dónde Juego?");
 
-            String validationUrl = "http://localhost:8080/api/auth/validate?token=" + token;
-
+            String validationUrl = backendUrl + "/api/auth/validate?token=" + token;
             message.setText("¡Gracias por registrarte en ¿Dónde Juego?!\n\n" +
                     "Por favor, haz clic en el siguiente enlace para activar tu cuenta:\n" +
                     validationUrl + "\n\n" +
@@ -43,7 +49,7 @@ public class EmailService {
             message.setTo(to);
             message.setSubject("Restablecer tu contraseña en ¿Dónde Juego?");
 
-            String resetUrl = "http://localhost:3000/reset-password?token=" + token;
+            String resetUrl = frontendUrl + "/reset-password?token=" + token;
 
             message.setText("Hola,\n\n" +
                     "Recibimos una solicitud para restablecer tu contraseña. Haz clic en el siguiente enlace:\n" +

@@ -1,10 +1,10 @@
 package com.example.reservafutbol.Modelo;
 
-import com.example.reservafutbol.Repositorio.ReservaRepositorio;
-import com.example.reservafutbol.Servicio.PagoServicio;
 import jakarta.persistence.*;
-import lombok.*;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

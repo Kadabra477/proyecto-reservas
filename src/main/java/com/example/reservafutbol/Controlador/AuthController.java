@@ -2,20 +2,21 @@ package com.example.reservafutbol.Controlador;
 
 import com.example.reservafutbol.Configuracion.JWTUtil;
 import com.example.reservafutbol.Modelo.User;
+import com.example.reservafutbol.Servicio.EmailService;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import com.example.reservafutbol.Servicio.EmailService;
-import java.util.UUID;
 
-import java.util.Map; // Importar Map
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 record ForgotPasswordRequest(@NotBlank @Email String email) {}
 // Ejemplo DTO para Reset Password Request
@@ -27,6 +28,9 @@ record ResetPasswordRequest(@NotBlank String token,
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
+    @Value("${frontend.url}")
+    private String frontendUrl;
 
     @Autowired
     private UsuarioServicio usuarioServicio;
@@ -85,17 +89,13 @@ public class AuthController {
         }
         boolean isValidated = usuarioServicio.validateUser(token);
         if (isValidated) {
-            // Puedes devolver un HTML simple o redirigir a una página del frontend
-            // return ResponseEntity.ok("<h1>Cuenta Validada</h1><p>Tu cuenta ha sido activada. Ya puedes iniciar sesión.</p>");
-            // O redirigir al frontend (ej: localhost:3000/login?validated=true)
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", "http://localhost:3000/login?validated=true") // Ajusta la URL del frontend
+                    .header("Location", frontendUrl + "/login?validated=true")
                     .build();
 
         } else {
-            // return ResponseEntity.badRequest().body("<h1>Error</h1><p>Enlace de validación inválido o expirado.</p>");
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", "http://localhost:3000/login?error=validation_failed") // Ajusta la URL del frontend
+                    .header("Location", frontendUrl + "/login?error=validation_failed") // Ajusta la URL del frontend
                     .build();
         }
     }

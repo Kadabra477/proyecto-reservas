@@ -1,8 +1,9 @@
 package com.example.reservafutbol.Configuracion;
 
-// --- Mantener todos tus imports ---
-import com.example.reservafutbol.Servicio.CustomUserDetailsService;
+import org.springframework.beans.factory.annotation.Value;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,11 +24,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.example.reservafutbol.Servicio.UsuarioServicio;
 
-import java.net.URLEncoder; // Asegúrate de importar URLEncoder
-import java.nio.charset.StandardCharsets; // Asegúrate de importar StandardCharsets
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -40,17 +40,18 @@ public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
     private final JWTAuthenticationFilter jwtAuthenticationFilter;
     private final JWTUtil jwtUtil;
-    private final CustomUserDetailsService userDetailsService;
+    private final UsuarioServicio usuarioServicio; // Cambio aquí
+    @Value("${frontend.url}")
+    private String frontendUrl;
 
-        @Autowired
-        public SecurityConfig(JWTUtil jwtUtil, CustomUserDetailsService userDetailsService) {
-            log.info("Inicializando SecurityConfig...");
-            this.jwtUtil = jwtUtil;
-            this.userDetailsService = userDetailsService;
-            this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
-            log.info("JWTAuthenticationFilter creado.");
-        }
-
+    @Autowired
+    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) { // Cambio aquí
+        log.info("Inicializando SecurityConfig...");
+        this.jwtUtil = jwtUtil;
+        this.usuarioServicio = usuarioServicio;
+        this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
+        log.info("JWTAuthenticationFilter creado.");
+    }
         @Bean
         public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
             log.debug("Configurando SecurityFilterChain...");
@@ -68,7 +69,7 @@ public class SecurityConfig {
                                     response.getWriter().write("{\"error\": \"No autorizado\", \"message\": \"" + authException.getMessage() + "\"}");
                                 } else {
                                     log.debug("Redirigiendo usuario no autenticado (no JSON) al login frontend.");
-                                    response.sendRedirect("http://localhost:3000/login?unauthorized=true");
+                                    response.sendRedirect(frontendUrl + "/login?unauthorized=true");
                                 }
                             })
                     )
@@ -82,6 +83,7 @@ public class SecurityConfig {
                             .requestMatchers("/api/pagos/ipn").permitAll()
                             .requestMatchers("/api/pagos/notificacion").permitAll()  // Permitir acceso sin autenticación
                             .requestMatchers("/error").permitAll()
+                            .requestMatchers("/error-404").permitAll()
 
                             // Rutas autenticadas
                             .requestMatchers("/api/reservas/**").authenticated()
@@ -96,7 +98,7 @@ public class SecurityConfig {
                             .successHandler(oAuth2AuthenticationSuccessHandler())
                             .failureHandler((request, response, exception) -> {
                                 log.error("Error en autenticación OAuth2: {}", exception.getMessage());
-                                response.sendRedirect("http://localhost:3000/login?error=oauth_failed");
+                                response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
                             })
                     );
             log.debug("SecurityFilterChain configurado exitosamente.");
@@ -107,7 +109,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of(frontendUrl + ""));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         configuration.setAllowCredentials(true);
@@ -115,7 +117,6 @@ public class SecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
-        log.debug("CORS configuration set for origin: http://localhost:3000");
         return source;
     }
 
@@ -124,7 +125,7 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(PasswordEncoder passwordEncoder) throws Exception {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService); // Usa el userDetailsService inyectado
+        authProvider.setUserDetailsService(usuarioServicio); // Cambio aquí
         authProvider.setPasswordEncoder(passwordEncoder);
         log.debug("DaoAuthenticationProvider configurado.");
         return new ProviderManager(authProvider);
@@ -144,7 +145,7 @@ public class SecurityConfig {
 
                 if (email == null || email.isBlank()) {
                     log.error("ERROR: Email obtenido de Google es null o vacío.");
-                    response.sendRedirect("http://localhost:3000/login?error=email_null");
+                    response.sendRedirect(frontendUrl + "/login?error=email_null");
                     return;
                 }
 
@@ -152,7 +153,7 @@ public class SecurityConfig {
                     String token = this.jwtUtil.generateTokenFromEmail(email);
                     log.debug("JWT generado para {} (primeros 10 chars): {}...", email, token.substring(0, 10));
 
-                    String targetUrl = "http://localhost:3000/oauth2-success?token=" + token;
+                    String targetUrl = frontendUrl + "/oauth2-success?token=" + token;
                     if (nombre != null && !nombre.isEmpty()) {
                         targetUrl += "&nombre=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
@@ -164,12 +165,12 @@ public class SecurityConfig {
 
                 } catch (Exception e) {
                     log.error("Error al generar JWT o redirigir tras OAuth2: {}", e.getMessage(), e);
-                    response.sendRedirect("http://localhost:3000/login?error=handler_exception");
+                    response.sendRedirect(frontendUrl + "/login?error=handler_exception");
                 }
 
             } else {
                 log.warn("Principal NO es DefaultOAuth2User: {}", authentication.getPrincipal().getClass());
-                response.sendRedirect("http://localhost:3000/login?error=principal_invalido");
+                response.sendRedirect(frontendUrl + "/login?error=principal_invalido");
             }
         };
     }

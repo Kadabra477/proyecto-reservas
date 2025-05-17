@@ -3,18 +3,17 @@ package com.example.reservafutbol.Servicio;
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ReservaRepositorio;
-import com.example.reservafutbol.Repositorio.UsuarioRepositorio; // Importar Repo de Usuario
+import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.userdetails.UsernameNotFoundException; // Para buscar usuario
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // Usar transacciones
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 

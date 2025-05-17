@@ -1,9 +1,9 @@
 package com.example.reservafutbol.DTO;
 
-import lombok.Data;
-
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
 

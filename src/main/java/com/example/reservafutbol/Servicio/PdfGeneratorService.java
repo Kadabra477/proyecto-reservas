@@ -2,8 +2,8 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Reserva;
 import com.itextpdf.text.*;
-import com.itextpdf.text.pdf.PdfPTable; // Para tablas si quieres mejorar formato
-import com.itextpdf.text.pdf.PdfPCell;  // Para celdas de tabla
+import com.itextpdf.text.pdf.PdfPCell;
+import com.itextpdf.text.pdf.PdfPTable;
 import com.itextpdf.text.pdf.PdfWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.text.NumberFormat; // Para formatear moneda
+import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 

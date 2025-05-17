@@ -2,8 +2,8 @@ package com.example.reservafutbol.Servicio;
 
 import com.mercadopago.MercadoPagoConfig;
 import com.mercadopago.client.preference.PreferenceBackUrlsRequest;
-import com.mercadopago.client.preference.PreferenceItemRequest;
 import com.mercadopago.client.preference.PreferenceClient;
+import com.mercadopago.client.preference.PreferenceItemRequest;
 import com.mercadopago.client.preference.PreferenceRequest;
 import com.mercadopago.exceptions.MPApiException;
 import com.mercadopago.exceptions.MPException;
@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,19 +22,27 @@ import java.util.List;
 @Service
 public class MercadoPagoService {
 
+    @Value("${backend.url}")
+    private String backendUrl;
+
+    @Value("${frontend.url}")
+    private String frontendUrl;
+
+    @Value("${mercadopago.notification.url}")
+    private String notificationUrl;
+
     private static final Logger log = LoggerFactory.getLogger(MercadoPagoService.class);
 
     @Value("${MERCADO_PAGO_ACCESS_TOKEN}")
     private String accessToken;
 
     // Se recomienda mover esta URL a application.properties
-    private final String BASE_URL = "http://localhost:8080"; // CAMBIAR en producción
 
     @PostConstruct
     public void init() {
         log.info("Configurando Mercado Pago SDK...");
-        if (accessToken == null || accessToken.isBlank() || accessToken.equals("TEST-xxxxxxxxxxxxxxxxxxxxx")) {
-            log.warn("MERCADO_PAGO_ACCESS_TOKEN no está configurado correctamente.");
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new IllegalStateException("MERCADO_PAGO_ACCESS_TOKEN no está configurado. Abortando...");
         }
         MercadoPagoConfig.setAccessToken(accessToken);
     }
@@ -55,16 +64,16 @@ public class MercadoPagoService {
 
         // URLs de redirección luego del pago
         PreferenceBackUrlsRequest backUrls = PreferenceBackUrlsRequest.builder()
-                .success(BASE_URL + "/pagos/success")
-                .failure(BASE_URL + "/pagos/failure")
-                .pending(BASE_URL + "/pagos/pending")
+                .success(backendUrl + "/pagos/success")
+                .failure(backendUrl + "/pagos/failure")
+                .pending(backendUrl + "/pagos/pending")
                 .build();
 
         PreferenceRequest preferenceRequest = PreferenceRequest.builder()
                 .items(items)
                 .backUrls(backUrls)
                 .autoReturn("approved") // Redirige automáticamente si el pago se aprueba
-                .notificationUrl("https://9e40-2802-8012-507a-6800-ad8b-26d3-9bf5-fbfe.ngrok-free.app/api/pagos/notificacion\n")
+                .notificationUrl(notificationUrl)
                 .externalReference(String.valueOf(reservaId)) // Para poder identificar luego
                 .build();
 
