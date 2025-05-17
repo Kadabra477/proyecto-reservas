@@ -4,6 +4,8 @@ WORKDIR /app
 COPY pom.xml .
 COPY src ./src
 RUN mvn clean package -DskipTests
+EXPOSE 8080
+
 
 # Etapa de ejecución
 FROM openjdk:17-jdk-slim
