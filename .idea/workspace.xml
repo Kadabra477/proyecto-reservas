@@ -5,31 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="25187d26-31f9-4854-868a-947e8f13f8f3" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/DotenvLoader.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/DotenvLoader.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/JWTAuthenticationFilter.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/JWTAuthenticationFilter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/SSLConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/SSLConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/SecurityConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Configuracion/SecurityConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/AuthController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/AuthController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/CanchaControlador.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/CanchaControlador.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/ErrorControlador.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/ErrorControlador.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/ReservaControlador.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/ReservaControlador.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/UsuarioControlador.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Controlador/UsuarioControlador.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/DTO/PagoDTO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/DTO/PagoDTO.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/DTO/ReservaDTO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/DTO/ReservaDTO.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Modelo/Cancha.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Modelo/Cancha.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Modelo/Reserva.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Modelo/Reserva.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Repositorio/UsuarioRepositorio.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Repositorio/UsuarioRepositorio.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/CustomUserDetailsService.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/EmailService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/EmailService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/MercadoPagoService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/MercadoPagoService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/PagoServicio.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/PagoServicio.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/PdfGeneratorService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/PdfGeneratorService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/ReservaServicio.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/ReservaServicio.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/UsuarioServicio.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/example/reservafutbol/Servicio/UsuarioServicio.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/logs/application.log" beforeDir="false" afterPath="$PROJECT_DIR$/logs/application.log" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/application.properties" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/templates/error-404.html" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/templates/error-404.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
