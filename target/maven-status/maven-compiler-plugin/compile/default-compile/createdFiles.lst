@@ -1,5 +1,6 @@
 com\example\reservafutbol\Controlador\ReservaControlador.class
 com\example\reservafutbol\Servicio\PdfGeneratorService.class
+com\example\reservafutbol\Configuracion\DotenvLoader.class
 com\example\reservafutbol\Controlador\CanchaControlador.class
 com\example\reservafutbol\DTO\PerfilDTO.class
 com\example\reservafutbol\Modelo\User.class
