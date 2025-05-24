@@ -36,45 +36,39 @@ import java.util.List;
 public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
-    private final JWTAuthenticationFilter jwtAuthenticationFilter;
+
     private final JWTUtil jwtUtil;
-    private final UsuarioServicio usuarioServicio;
 
     @Value("${frontend.url}")
     private String frontendUrl;
 
-    @Autowired
-    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
-        log.info("Inicializando SecurityConfig...");
+    private final JWTAuthenticationFilter jwtAuthenticationFilter;
+
+    // Constructor solo con lo mínimo para evitar ciclo
+    public SecurityConfig(JWTUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
-        this.usuarioServicio = usuarioServicio;
         this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
-        log.info("JWTAuthenticationFilter creado.");
+        log.info("SecurityConfig initialized.");
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        log.debug("Configurando SecurityFilterChain...");
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(handler -> handler
-                        .authenticationEntryPoint((request, response, authException) -> {
-                            log.warn("AuthenticationEntryPoint triggered. Path: {}, Error: {}", request.getRequestURI(), authException.getMessage());
-                            String acceptHeader = request.getHeader("Accept");
-                            if (acceptHeader != null && acceptHeader.contains("application/json")) {
-                                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                                response.setContentType("application/json");
-                                response.getWriter().write("{\"error\": \"No autorizado\", \"message\": \"" + authException.getMessage() + "\"}");
-                            } else {
-                                log.debug("Redirigiendo usuario no autenticado (no JSON) al login frontend.");
-                                response.sendRedirect(frontendUrl + "/login?unauthorized=true");
-                            }
-                        })
-                )
+                .exceptionHandling(handler -> handler.authenticationEntryPoint((request, response, authException) -> {
+                    log.warn("Unauthorized access to '{}': {}", request.getRequestURI(), authException.getMessage());
+                    String accept = request.getHeader("Accept");
+                    if (accept != null && accept.contains("application/json")) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json");
+                        response.getWriter().write("{\"error\": \"No autorizado\", \"message\": \"" + authException.getMessage() + "\"}");
+                    } else {
+                        response.sendRedirect(frontendUrl + "/login?unauthorized=true");
+                    }
+                }))
                 .authorizeHttpRequests(auth -> auth
-                        // Rutas públicas
                         .requestMatchers("/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json", "/logo192.png", "/logo512.png").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/oauth2/**").permitAll()
@@ -82,10 +76,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/canchas", "/api/canchas/**").permitAll()
                         .requestMatchers("/api/pagos/ipn").permitAll()
                         .requestMatchers("/api/pagos/notificacion").permitAll()
-                        .requestMatchers("/error").permitAll()
-                        .requestMatchers("/error-404").permitAll()
-
-                        // Rutas autenticadas
+                        .requestMatchers("/error", "/error-404").permitAll()
                         .requestMatchers("/api/reservas/**").authenticated()
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
                         .requestMatchers("/api/pagos/pdf/**").authenticated()
@@ -97,75 +88,69 @@ public class SecurityConfig {
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oAuth2AuthenticationSuccessHandler())
                         .failureHandler((request, response, exception) -> {
-                            log.error("Error en autenticación OAuth2: {}", exception.getMessage());
+                            log.error("OAuth2 authentication failure: {}", exception.getMessage());
                             response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
                         })
                 );
 
-        log.debug("SecurityFilterChain configurado exitosamente.");
+        log.info("SecurityFilterChain configured.");
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(frontendUrl));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of(frontendUrl));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration("/**", config);
         return source;
     }
 
+    // Aquí inyectamos UsuarioServicio y PasswordEncoder, no en el constructor
     @Bean
-    public AuthenticationManager authenticationManager(PasswordEncoder passwordEncoder) throws Exception {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(usuarioServicio);
-        authProvider.setPasswordEncoder(passwordEncoder);
-        log.debug("DaoAuthenticationProvider configurado.");
-        return new ProviderManager(authProvider);
+    public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(usuarioServicio);
+        provider.setPasswordEncoder(passwordEncoder);
+        log.info("DaoAuthenticationProvider configured.");
+        return new ProviderManager(provider);
     }
 
     @Bean
     public AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler() {
         return (request, response, authentication) -> {
-            log.info("--- oAuth2AuthenticationSuccessHandler INICIADO ---");
+            log.info("OAuth2 authentication success handler triggered.");
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
-                log.debug("Principal es DefaultOAuth2User.");
                 String email = oauthUser.getAttribute("email");
                 String nombre = oauthUser.getAttribute("name");
-                log.info("OAuth2 User Info -> Email: {}, Nombre: {}", email, nombre);
 
                 if (email == null || email.isBlank()) {
-                    log.error("ERROR: Email obtenido de Google es null o vacío.");
+                    log.error("OAuth2 user email is null or blank");
                     response.sendRedirect(frontendUrl + "/login?error=email_null");
                     return;
                 }
 
                 try {
-                    String token = this.jwtUtil.generateTokenFromEmail(email);
-                    log.debug("JWT generado para {} (primeros 10 chars): {}...", email, token.substring(0, 10));
-
-                    String targetUrl = frontendUrl + "/oauth2-success?token=" + token;
+                    String token = jwtUtil.generateTokenFromEmail(email);
+                    String targetUrl = frontendUrl + "/oauth2-success?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
                     if (nombre != null && !nombre.isEmpty()) {
                         targetUrl += "&nombre=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
                     targetUrl += "&email=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
 
-                    log.info("Redirigiendo a frontend: {}", targetUrl);
+                    log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);
-                    log.debug("--- Redirección enviada a frontend ---");
-
                 } catch (Exception e) {
-                    log.error("Error al generar JWT o redirigir tras OAuth2: {}", e.getMessage(), e);
+                    log.error("Error generating JWT or redirecting: {}", e.getMessage(), e);
                     response.sendRedirect(frontendUrl + "/login?error=handler_exception");
                 }
-
             } else {
-                log.warn("Principal NO es DefaultOAuth2User: {}", authentication.getPrincipal().getClass());
+                log.warn("OAuth2 principal is not DefaultOAuth2User: {}", authentication.getPrincipal().getClass());
                 response.sendRedirect(frontendUrl + "/login?error=principal_invalido");
             }
         };

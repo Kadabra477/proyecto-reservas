@@ -3,6 +3,8 @@ package com.example.reservafutbol.Servicio;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -17,38 +19,39 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-@RequiredArgsConstructor  // Lombok genera constructor con todos los final
+@RequiredArgsConstructor
 @Service
 public class UsuarioServicio implements UserDetailsService {
+
+    private static final Logger log = LoggerFactory.getLogger(UsuarioServicio.class);
 
     private final UsuarioRepositorio usuarioRepositorio;
     private final PasswordEncoder passwordEncoder;
 
-    // --- Buscar usuario por username/email ---
     public Optional<User> findByUsername(String username) {
         return usuarioRepositorio.findByUsername(username);
     }
 
-    // --- Guardar usuario (sin retorno) ---
     @Transactional
     public void guardarUsuario(User usuario) {
         usuarioRepositorio.save(usuario);
+        log.info("Usuario guardado: {}", usuario.getUsername());
     }
 
-    // --- Guardar usuario (con retorno) ---
     @Transactional
     public User guardarUsuarioConRetorno(User usuario) {
-        return usuarioRepositorio.save(usuario);
+        User savedUser = usuarioRepositorio.save(usuario);
+        log.info("Usuario guardado con retorno: {}", savedUser.getUsername());
+        return savedUser;
     }
 
-    // --- Validar token de activación ---
     @Transactional
     public boolean validateUser(String token) {
         Optional<User> userOpt = usuarioRepositorio.findByValidationToken(token);
         if (userOpt.isPresent()) {
             User usuario = userOpt.get();
-            if (usuario.getActive()) {
-                System.out.println("Cuenta ya activa para token (limpiando token): " + token);
+            if (Boolean.TRUE.equals(usuario.getActive())) {
+                log.info("Cuenta ya activa para token {}, limpiando token.", token);
                 usuario.setValidationToken(null);
                 usuarioRepositorio.save(usuario);
                 return true;
@@ -56,22 +59,21 @@ public class UsuarioServicio implements UserDetailsService {
             usuario.setActive(true);
             usuario.setValidationToken(null);
             usuarioRepositorio.save(usuario);
-            System.out.println(">>> Cuenta activada para usuario: " + usuario.getUsername());
+            log.info("Cuenta activada para usuario: {}", usuario.getUsername());
             return true;
         }
-        System.err.println(">>> Token de validación no encontrado: " + token);
+        log.warn("Token de validación no encontrado: {}", token);
         return false;
     }
 
-    // --- Cargar usuario para Spring Security ---
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User usuario = usuarioRepositorio.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con email: " + username));
 
-        if (!usuario.getActive()) {
-            System.out.println(">>> Intento de login denegado - cuenta inactiva: " + username);
+        if (!Boolean.TRUE.equals(usuario.getActive())) {
+            log.warn("Intento de login denegado - cuenta inactiva: {}", username);
             throw new LockedException("La cuenta no está activa. Por favor, valida tu correo electrónico.");
         }
 
@@ -81,16 +83,14 @@ public class UsuarioServicio implements UserDetailsService {
         return new org.springframework.security.core.userdetails.User(
                 usuario.getUsername(),
                 usuario.getPassword(),
-                authorities
-        );
+                authorities);
     }
 
-    // --- Crear token para reseteo de contraseña ---
     @Transactional
     public String createPasswordResetToken(String userEmail) {
         Optional<User> userOpt = usuarioRepositorio.findByUsername(userEmail);
         if (userOpt.isEmpty()) {
-            System.err.println("Solicitud de reseteo para email no encontrado: " + userEmail);
+            log.warn("Solicitud de reseteo para email no encontrado: {}", userEmail);
             return null;
         }
         User usuario = userOpt.get();
@@ -99,23 +99,21 @@ public class UsuarioServicio implements UserDetailsService {
         usuario.setPasswordResetToken(token);
         usuario.setPasswordResetTokenExpiry(expiryDate);
         usuarioRepositorio.save(usuario);
-        System.out.println(">>> Token de reseteo creado para: " + userEmail);
+        log.info("Token de reseteo creado para usuario: {}", userEmail);
         return token;
     }
 
-    // --- Resetear contraseña usando token ---
     @Transactional
     public boolean resetPassword(String token, String newPassword) {
         Optional<User> userOpt = usuarioRepositorio.findByPasswordResetToken(token);
         if (userOpt.isEmpty()) {
-            System.err.println("Intento de reseteo con token inválido: " + token);
+            log.warn("Intento de reseteo con token inválido: {}", token);
             return false;
         }
         User usuario = userOpt.get();
 
-        if (usuario.getPasswordResetTokenExpiry() == null ||
-                usuario.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
-            System.err.println("Intento de reseteo con token expirado para usuario: " + usuario.getUsername());
+        if (usuario.getPasswordResetTokenExpiry() == null || usuario.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
+            log.warn("Intento de reseteo con token expirado para usuario: {}", usuario.getUsername());
             usuario.setPasswordResetToken(null);
             usuario.setPasswordResetTokenExpiry(null);
             usuarioRepositorio.save(usuario);
@@ -123,7 +121,7 @@ public class UsuarioServicio implements UserDetailsService {
         }
 
         if (newPassword == null || newPassword.length() < 6) {
-            System.err.println("Intento de reseteo con contraseña inválida para usuario: " + usuario.getUsername());
+            log.warn("Intento de reseteo con contraseña inválida para usuario: {}", usuario.getUsername());
             return false;
         }
 
@@ -131,9 +129,7 @@ public class UsuarioServicio implements UserDetailsService {
         usuario.setPasswordResetToken(null);
         usuario.setPasswordResetTokenExpiry(null);
         usuarioRepositorio.save(usuario);
-
-        System.out.println(">>> Contraseña reseteada exitosamente para usuario: " + usuario.getUsername());
+        log.info("Contraseña reseteada exitosamente para usuario: {}", usuario.getUsername());
         return true;
     }
-
 }
