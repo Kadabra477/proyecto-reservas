@@ -3,7 +3,6 @@ package com.example.reservafutbol.Servicio;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -18,28 +17,38 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-@RequiredArgsConstructor
+@RequiredArgsConstructor  // Lombok genera constructor con todos los final
 @Service
 public class UsuarioServicio implements UserDetailsService {
-    private UsuarioRepositorio usuarioRepositorio;
-    private PasswordEncoder passwordEncoder;
 
+    private final UsuarioRepositorio usuarioRepositorio;
+    private final PasswordEncoder passwordEncoder;
+
+    // --- Buscar usuario por username/email ---
     public Optional<User> findByUsername(String username) {
         return usuarioRepositorio.findByUsername(username);
     }
 
+    // --- Guardar usuario (sin retorno) ---
+    @Transactional
+    public void guardarUsuario(User usuario) {
+        usuarioRepositorio.save(usuario);
+    }
+
+    // --- Guardar usuario (con retorno) ---
     @Transactional
     public User guardarUsuarioConRetorno(User usuario) {
         return usuarioRepositorio.save(usuario);
     }
 
+    // --- Validar token de activación ---
     @Transactional
     public boolean validateUser(String token) {
         Optional<User> userOpt = usuarioRepositorio.findByValidationToken(token);
         if (userOpt.isPresent()) {
             User usuario = userOpt.get();
             if (usuario.getActive()) {
-                System.out.println("Cuenta ya estaba activa para token (limpiando token): " + token);
+                System.out.println("Cuenta ya activa para token (limpiando token): " + token);
                 usuario.setValidationToken(null);
                 usuarioRepositorio.save(usuario);
                 return true;
@@ -54,38 +63,29 @@ public class UsuarioServicio implements UserDetailsService {
         return false;
     }
 
+    // --- Cargar usuario para Spring Security ---
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. Obtener tu entidad de usuario personalizada
-        com.example.reservafutbol.Modelo.User usuario = usuarioRepositorio.findByUsername(username)
+        User usuario = usuarioRepositorio.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con email: " + username));
 
-        // 2. Verificar si la cuenta está activa (lanza LockedException si no lo está)
-        // Esta verificación ya impide el login si está inactiva.
         if (!usuario.getActive()) {
             System.out.println(">>> Intento de login denegado - cuenta inactiva: " + username);
             throw new LockedException("La cuenta no está activa. Por favor, valida tu correo electrónico.");
         }
 
-        // 3. Crear la lista de autoridades/roles para Spring Security
-        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getRol()));
+        List<SimpleGrantedAuthority> authorities = List.of(
+                new SimpleGrantedAuthority("ROLE_" + usuario.getRol()));
 
-        // 4. Crear y devolver el objeto UserDetails de Spring Security
-        // Utilizando el constructor: User(username, password, authorities)
         return new org.springframework.security.core.userdetails.User(
                 usuario.getUsername(),
                 usuario.getPassword(),
-                authorities // Pasamos la lista de autoridades creada
+                authorities
         );
     }
 
-    // Puede quedar si se usa en otro lado
-    public void guardarUsuario(User usuario) {
-        usuarioRepositorio.save(usuario);
-    }
-
-    // --- Crear Token de Reseteo (Sin cambios) ---
+    // --- Crear token para reseteo de contraseña ---
     @Transactional
     public String createPasswordResetToken(String userEmail) {
         Optional<User> userOpt = usuarioRepositorio.findByUsername(userEmail);
@@ -102,10 +102,8 @@ public class UsuarioServicio implements UserDetailsService {
         System.out.println(">>> Token de reseteo creado para: " + userEmail);
         return token;
     }
-    // --- FIN Crear Token ---
 
-
-    // --- Resetear Contraseña (Usa el passwordEncoder inyectado) ---
+    // --- Resetear contraseña usando token ---
     @Transactional
     public boolean resetPassword(String token, String newPassword) {
         Optional<User> userOpt = usuarioRepositorio.findByPasswordResetToken(token);
@@ -115,7 +113,8 @@ public class UsuarioServicio implements UserDetailsService {
         }
         User usuario = userOpt.get();
 
-        if (usuario.getPasswordResetTokenExpiry() == null || usuario.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
+        if (usuario.getPasswordResetTokenExpiry() == null ||
+                usuario.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
             System.err.println("Intento de reseteo con token expirado para usuario: " + usuario.getUsername());
             usuario.setPasswordResetToken(null);
             usuario.setPasswordResetTokenExpiry(null);
@@ -128,15 +127,13 @@ public class UsuarioServicio implements UserDetailsService {
             return false;
         }
 
-        // --- AHORA SÍ PUEDE USAR passwordEncoder ---
         usuario.setPassword(passwordEncoder.encode(newPassword));
         usuario.setPasswordResetToken(null);
         usuario.setPasswordResetTokenExpiry(null);
         usuarioRepositorio.save(usuario);
-        // --- FIN USO ---
 
         System.out.println(">>> Contraseña reseteada exitosamente para usuario: " + usuario.getUsername());
         return true;
     }
-    // --- FIN Resetear Contraseña ---
+
 }

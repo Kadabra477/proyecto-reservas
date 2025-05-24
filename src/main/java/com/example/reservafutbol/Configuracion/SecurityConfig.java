@@ -28,9 +28,7 @@ import com.example.reservafutbol.Servicio.UsuarioServicio;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
-
 
 @Configuration
 @EnableWebSecurity
@@ -40,98 +38,96 @@ public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
     private final JWTAuthenticationFilter jwtAuthenticationFilter;
     private final JWTUtil jwtUtil;
-    private final UsuarioServicio usuarioServicio; // Cambio aquí
+    private final UsuarioServicio usuarioServicio;
+
     @Value("${frontend.url}")
     private String frontendUrl;
 
     @Autowired
-    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) { // Cambio aquí
+    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
         log.info("Inicializando SecurityConfig...");
         this.jwtUtil = jwtUtil;
         this.usuarioServicio = usuarioServicio;
         this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
         log.info("JWTAuthenticationFilter creado.");
     }
-        @Bean
-        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-            log.debug("Configurando SecurityFilterChain...");
-            http
-                    .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                    .csrf(csrf -> csrf.disable())
-                    .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                    .exceptionHandling(handler -> handler
-                            .authenticationEntryPoint((request, response, authException) -> {
-                                log.warn("AuthenticationEntryPoint triggered. Path: {}, Error: {}", request.getRequestURI(), authException.getMessage());
-                                String acceptHeader = request.getHeader("Accept");
-                                if (acceptHeader != null && acceptHeader.contains("application/json")) {
-                                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                                    response.setContentType("application/json");
-                                    response.getWriter().write("{\"error\": \"No autorizado\", \"message\": \"" + authException.getMessage() + "\"}");
-                                } else {
-                                    log.debug("Redirigiendo usuario no autenticado (no JSON) al login frontend.");
-                                    response.sendRedirect(frontendUrl + "/login?unauthorized=true");
-                                }
-                            })
-                    )
-                    .authorizeHttpRequests(auth -> auth
-                            // Rutas públicas
-                            .requestMatchers("/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json", "/logo192.png", "/logo512.png").permitAll()
-                            .requestMatchers("/api/auth/**").permitAll()
-                            .requestMatchers("/oauth2/**").permitAll()
-                            .requestMatchers("/login/oauth2/code/google").permitAll()
-                            .requestMatchers(HttpMethod.GET, "/api/canchas", "/api/canchas/**").permitAll()
-                            .requestMatchers("/api/pagos/ipn").permitAll()
-                            .requestMatchers("/api/pagos/notificacion").permitAll()  // Permitir acceso sin autenticación
-                            .requestMatchers("/error").permitAll()
-                            .requestMatchers("/error-404").permitAll()
 
-                            // Rutas autenticadas
-                            .requestMatchers("/api/reservas/**").authenticated()
-                            .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
-                            .requestMatchers("/api/pagos/pdf/**").authenticated()
-                            .requestMatchers("/api/usuarios/mi-perfil").authenticated()
-                            .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                            .anyRequest().authenticated()
-                    )
-                    .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                    .oauth2Login(oauth2 -> oauth2
-                            .successHandler(oAuth2AuthenticationSuccessHandler())
-                            .failureHandler((request, response, exception) -> {
-                                log.error("Error en autenticación OAuth2: {}", exception.getMessage());
-                                response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
-                            })
-                    );
-            log.debug("SecurityFilterChain configurado exitosamente.");
-            return http.build();
-        }
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        log.debug("Configurando SecurityFilterChain...");
+        http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(handler -> handler
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            log.warn("AuthenticationEntryPoint triggered. Path: {}, Error: {}", request.getRequestURI(), authException.getMessage());
+                            String acceptHeader = request.getHeader("Accept");
+                            if (acceptHeader != null && acceptHeader.contains("application/json")) {
+                                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                                response.setContentType("application/json");
+                                response.getWriter().write("{\"error\": \"No autorizado\", \"message\": \"" + authException.getMessage() + "\"}");
+                            } else {
+                                log.debug("Redirigiendo usuario no autenticado (no JSON) al login frontend.");
+                                response.sendRedirect(frontendUrl + "/login?unauthorized=true");
+                            }
+                        })
+                )
+                .authorizeHttpRequests(auth -> auth
+                        // Rutas públicas
+                        .requestMatchers("/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json", "/logo192.png", "/logo512.png").permitAll()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/oauth2/**").permitAll()
+                        .requestMatchers("/login/oauth2/code/google").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/canchas", "/api/canchas/**").permitAll()
+                        .requestMatchers("/api/pagos/ipn").permitAll()
+                        .requestMatchers("/api/pagos/notificacion").permitAll()
+                        .requestMatchers("/error").permitAll()
+                        .requestMatchers("/error-404").permitAll()
 
-    // Configuración CORS (Bean) - Sin cambios
+                        // Rutas autenticadas
+                        .requestMatchers("/api/reservas/**").authenticated()
+                        .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
+                        .requestMatchers("/api/pagos/pdf/**").authenticated()
+                        .requestMatchers("/api/usuarios/mi-perfil").authenticated()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(oAuth2AuthenticationSuccessHandler())
+                        .failureHandler((request, response, exception) -> {
+                            log.error("Error en autenticación OAuth2: {}", exception.getMessage());
+                            response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
+                        })
+                );
+
+        log.debug("SecurityFilterChain configurado exitosamente.");
+        return http.build();
+    }
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(frontendUrl + ""));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
+        configuration.setAllowedOrigins(List.of(frontendUrl));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 
-
-    // AuthenticationManager Bean - Sin cambios
     @Bean
     public AuthenticationManager authenticationManager(PasswordEncoder passwordEncoder) throws Exception {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(usuarioServicio); // Cambio aquí
+        authProvider.setUserDetailsService(usuarioServicio);
         authProvider.setPasswordEncoder(passwordEncoder);
         log.debug("DaoAuthenticationProvider configurado.");
         return new ProviderManager(authProvider);
     }
 
-    // OAuth2 Success Handler Bean (con email añadido a la URL) - Sin cambios respecto al anterior
     @Bean
     public AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler() {
         return (request, response, authentication) -> {
@@ -157,7 +153,7 @@ public class SecurityConfig {
                     if (nombre != null && !nombre.isEmpty()) {
                         targetUrl += "&nombre=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
-                    targetUrl += "&email=" + URLEncoder.encode(email, StandardCharsets.UTF_8); // Añadir email
+                    targetUrl += "&email=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
 
                     log.info("Redirigiendo a frontend: {}", targetUrl);
                     response.sendRedirect(targetUrl);
@@ -175,7 +171,6 @@ public class SecurityConfig {
         };
     }
 
-    // PasswordEncoder Bean - Sin cambios
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
