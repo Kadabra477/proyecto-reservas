@@ -172,5 +172,22 @@ public class AuthController {
         }
     }
     // --- FIN Endpoint Reset Password ---
+    @GetMapping("/validate-token")
+    public ResponseEntity<?> validarToken(@RequestHeader("Authorization") String authHeader) {
+        try {
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no proporcionado o mal formado");
+            }
+            String token = authHeader.substring(7); // Sacamos "Bearer "
+            boolean valido = jwtUtil.isTokenValid(token);
+            if (valido) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error al validar token");
+        }
+    }
 
 }
