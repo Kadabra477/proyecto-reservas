@@ -132,4 +132,36 @@ public class UsuarioServicio implements UserDetailsService {
         log.info("Contraseña reseteada exitosamente para usuario: {}", usuario.getUsername());
         return true;
     }
+
+    // --- Nuevos métodos para el perfil ---
+
+    @Transactional(readOnly = true)
+    public Optional<User> getUserProfileByEmail(String email) {
+        return usuarioRepositorio.findByUsername(email);
+    }
+
+    @Transactional
+    public User updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
+        if (nombreCompleto != null) {
+            user.setNombreCompleto(nombreCompleto);
+        }
+        if (ubicacion != null) {
+            user.setUbicacion(ubicacion);
+        }
+        // Solo actualizar edad si no es nula. Si viene 0, puede ser intencional o un error.
+        // Se sugiere que el frontend envíe null o "" para "sin valor" y 0 para "cero años".
+        // Aquí asumimos que null significa que no se debe actualizar.
+        user.setEdad(edad); // Se permite null si el DTO lo envía como null
+        if (bio != null) {
+            user.setBio(bio);
+        }
+        user.setCompletoPerfil(true); // Una vez que edita, se asume que completa
+        return usuarioRepositorio.save(user);
+    }
+
+    @Transactional
+    public User updateProfilePictureUrl(User user, String profilePictureUrl) {
+        user.setProfilePictureUrl(profilePictureUrl);
+        return usuarioRepositorio.save(user);
+    }
 }

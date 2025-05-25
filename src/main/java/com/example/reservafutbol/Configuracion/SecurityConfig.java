@@ -77,10 +77,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/pagos/ipn").permitAll()
                         .requestMatchers("/api/pagos/notificacion").permitAll()
                         .requestMatchers("/error", "/error-404").permitAll()
+                        // Nuevos endpoints para el perfil del usuario logueado
+                        .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
                         .requestMatchers("/api/reservas/**").authenticated()
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
                         .requestMatchers("/api/pagos/pdf/**").authenticated()
-                        .requestMatchers("/api/usuarios/mi-perfil").authenticated()
+                        .requestMatchers("/api/usuarios/mi-perfil").authenticated() // Esta ruta parece duplicar /api/users/me, revísala
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -139,9 +143,10 @@ public class SecurityConfig {
                     String token = jwtUtil.generateTokenFromEmail(email);
                     String targetUrl = frontendUrl + "/oauth2-success?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
                     if (nombre != null && !nombre.isEmpty()) {
-                        targetUrl += "&nombre=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
+                        // El frontend espera 'nombreCompleto' y 'username' (email)
+                        targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8); // Mantén 'name' si el frontend lo espera así
                     }
-                    targetUrl += "&email=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
+                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8); // Cambiado a 'username'
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);

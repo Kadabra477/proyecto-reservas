@@ -33,6 +33,12 @@ public class User {
     private Boolean completoPerfil = false;
     private String telefono;
 
+    // Nuevos campos para el perfil
+    @Column(columnDefinition = "TEXT") // Para almacenar texto más largo
+    private String bio; // Nuevo campo para la biografía
+
+    private String profilePictureUrl; // Nuevo campo para la URL de la foto de perfil
+
     @Column(length = 36)
     private String validationToken;
 
