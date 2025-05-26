@@ -7,36 +7,41 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
 @Configuration
-@EnableWebMvc // Habilita la configuración MVC de Spring
+@EnableWebMvc // Es importante mantener esta anotación
 public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // Regla explícita para asegurar que las rutas /api/** NO sean tratadas como recursos estáticos.
-        // Si una URL comienza con /api/, este manejador intentará resolverla, pero nuestro resolver personalizado
-        // devolverá null, indicando que no es un recurso estático, permitiendo que el DispatcherServlet la mapee a un controlador.
+        // Esta es la regla MÁS CRÍTICA:
+        // Asegurarse de que cualquier ruta que comience con "/api/" NO sea tratada como un recurso estático.
+        // Esto fuerza a Spring a pasar la solicitud al DispatcherServlet para que busque un @RestController.
         registry.addResourceHandler("/api/**")
-                .addResourceLocations("classpath:/static/") // La ubicación no importa mucho aquí, es el resolver quien decide
-                .resourceChain(true)
+                .resourceChain(false) // No continuar la cadena de recursos si este manejador no encuentra nada
                 .addResolver(new PathResourceResolver() {
                     @Override
                     protected org.springframework.core.io.Resource getResource(String resourcePath,
                                                                                org.springframework.core.io.Resource location) throws java.io.IOException {
-                        // Si la ruta comienza con "api/", significa que es una llamada a la API y no un recurso estático.
-                        // Devolvemos null para que Spring continúe buscando un controlador REST para esta ruta.
+                        // Si la ruta solicitada comienza con "api/", significa que es una llamada a nuestra API REST.
+                        // En este caso, NO es un recurso estático, por lo que devolvemos 'null'.
+                        // Esto le indica a Spring que este ResourceHandler no puede resolver la ruta,
+                        // permitiendo que el DispatcherServlet tome el control y la dirija al controlador adecuado.
                         if (resourcePath.startsWith("api/")) {
                             return null;
                         }
+                        // Para otras rutas, se usa el comportamiento estándar de ResourceResolver
                         return super.getResource(resourcePath, location);
                     }
                 });
 
-        // Regla general para servir todos los demás recursos estáticos de tu aplicación (frontend, imágenes, etc.).
-        // Esto incluirá "/", "/index.html", "/static/**", "/favicon.ico", etc.
+        // Esta es la regla general para servir todos los demás recursos estáticos de tu aplicación.
+        // Aquí es donde se encontrarán tu index.html, CSS, JS, etc.
         registry.addResourceHandler("/**")
                 .addResourceLocations("classpath:/static/", "classpath:/public/", "classpath:/META-INF/resources/")
-                .setCachePeriod(3600) // Configura el período de caché para recursos estáticos (ej. 1 hora)
+                .setCachePeriod(3600) // 1 hora de caché, puedes ajustar esto
                 .resourceChain(true)
                 .addResolver(new PathResourceResolver());
     }
+
+    // No necesitas anular configureDefaultServletHandling(DefaultServletHandlerConfigurer configurer)
+    // a menos que estés teniendo un problema específico con el default servlet.
 }
