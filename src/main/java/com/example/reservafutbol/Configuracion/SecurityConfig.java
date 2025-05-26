@@ -4,7 +4,6 @@ import org.springframework.beans.factory.annotation.Value;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,6 +13,7 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,7 +44,6 @@ public class SecurityConfig {
 
     private final JWTAuthenticationFilter jwtAuthenticationFilter;
 
-    // Constructor solo con lo mínimo para evitar ciclo
     public SecurityConfig(JWTUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
         this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
@@ -55,7 +54,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
+                .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handler -> handler.authenticationEntryPoint((request, response, authException) -> {
                     log.warn("Unauthorized access to '{}': {}", request.getRequestURI(), authException.getMessage());
@@ -69,22 +68,26 @@ public class SecurityConfig {
                     }
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json", "/logo192.png", "/logo512.png").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/oauth2/**").permitAll()
-                        .requestMatchers("/login/oauth2/code/google").permitAll()
+                        // Rutas públicas que no requieren autenticación
+                        // Las rutas estáticas y otras se agrupan por separado del HttpMethod.GET
+                        .requestMatchers(
+                                "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
+                                "/logo192.png", "/logo512.png",
+                                "/api/auth/**", "/oauth2/**", "/login/oauth2/code/google",
+                                "/api/pagos/ipn", "/api/pagos/notificacion",
+                                "/error", "/error-404"
+                        ).permitAll()
+                        // Rutas GET específicas permitidas
                         .requestMatchers(HttpMethod.GET, "/api/canchas", "/api/canchas/**").permitAll()
-                        .requestMatchers("/api/pagos/ipn").permitAll()
-                        .requestMatchers("/api/pagos/notificacion").permitAll()
-                        .requestMatchers("/error", "/error-404").permitAll()
-                        // Nuevos endpoints para el perfil del usuario logueado
+
+                        // Rutas protegidas que requieren autenticación
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
                         .requestMatchers("/api/reservas/**").authenticated()
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
                         .requestMatchers("/api/pagos/pdf/**").authenticated()
-                        .requestMatchers("/api/usuarios/mi-perfil").authenticated() // Esta ruta parece duplicar /api/users/me, revísala
+                        .requestMatchers("/api/usuarios/mi-perfil").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -104,8 +107,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(frontendUrl));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedOrigins(List.of(frontendUrl, "https://proyecto-reservas-jsw5.onrender.com"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -114,7 +117,6 @@ public class SecurityConfig {
         return source;
     }
 
-    // Aquí inyectamos UsuarioServicio y PasswordEncoder, no en el constructor
     @Bean
     public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -143,10 +145,9 @@ public class SecurityConfig {
                     String token = jwtUtil.generateTokenFromEmail(email);
                     String targetUrl = frontendUrl + "/oauth2-success?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
                     if (nombre != null && !nombre.isEmpty()) {
-                        // El frontend espera 'nombreCompleto' y 'username' (email)
-                        targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8); // Mantén 'name' si el frontend lo espera así
+                        targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
-                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8); // Cambiado a 'username'
+                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);
