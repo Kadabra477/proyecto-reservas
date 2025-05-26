@@ -87,7 +87,6 @@ public class SecurityConfig {
                         .requestMatchers("/api/reservas/**").authenticated()
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
                         .requestMatchers("/api/pagos/pdf/**").authenticated()
-                        .requestMatchers("/api/usuarios/mi-perfil").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -153,7 +152,7 @@ public class SecurityConfig {
                     response.sendRedirect(targetUrl);
                 } catch (Exception e) {
                     log.error("Error generating JWT or redirecting: {}", e.getMessage(), e);
-                    response.sendRedirect(frontendUrl + "/login?error=handler_exception");
+                    response.sendRedirect(frontendUrl + "/login          ?error=handler_exception");
                 }
             } else {
                 log.warn("OAuth2 principal is not DefaultOAuth2User: {}", authentication.getPrincipal().getClass());
