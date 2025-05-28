@@ -1,9 +1,10 @@
 package com.example.reservafutbol.Configuracion;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.example.reservafutbol.Servicio.UsuarioServicio;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -15,6 +16,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority; // Importar GrantedAuthority
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
@@ -24,11 +26,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import com.example.reservafutbol.Servicio.UsuarioServicio;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.stream.Collectors; // Importar Collectors
 
 @Configuration
 @EnableWebSecurity
@@ -133,6 +135,13 @@ public class SecurityConfig {
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
                 String nombre = oauthUser.getAttribute("name");
+                // Obtener el rol del usuario OAuth2
+                String role = oauthUser.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority) // Convierte a String (ej. "ROLE_USER")
+                        .filter(a -> a.startsWith("ROLE_")) // Filtra para asegurar que es un rol
+                        .map(a -> a.substring(5)) // Quita "ROLE_" para obtener solo "USER" o "ADMIN"
+                        .findFirst()
+                        .orElse("USER"); // Rol por defecto si no se encuentra ninguno
 
                 if (email == null || email.isBlank()) {
                     log.error("OAuth2 user email is null or blank");
@@ -141,18 +150,19 @@ public class SecurityConfig {
                 }
 
                 try {
-                    String token = jwtUtil.generateTokenFromEmail(email);
+                    String token = jwtUtil.generateTokenFromEmail(email); // Asumo que generateTokenFromEmail maneja la lógica para el token
                     String targetUrl = frontendUrl + "/oauth2-success?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
                     if (nombre != null && !nombre.isEmpty()) {
                         targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
+                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8); // <-- Añadir el rol aquí
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);
                 } catch (Exception e) {
                     log.error("Error generating JWT or redirecting: {}", e.getMessage(), e);
-                    response.sendRedirect(frontendUrl + "/login          ?error=handler_exception");
+                    response.sendRedirect(frontendUrl + "/login?error=handler_exception");
                 }
             } else {
                 log.warn("OAuth2 principal is not DefaultOAuth2User: {}", authentication.getPrincipal().getClass());

@@ -108,9 +108,6 @@ public class AuthController {
         if (usuarioOpt.isPresent()) {
             User usuario = usuarioOpt.get();
 
-            // VERIFICACIÓN DE CUENTA ACTIVA (Ya implementada en usuarioServicio -> loadUserByUsername con LockedException)
-            // El manejo de LockedException debería ocurrir en un AuthenticationFailureHandler o ser capturado
-            // Alternativamente, puedes verificar aquí ANTES de intentar autenticar:
             if (!usuario.getActive()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Tu cuenta no está activa. Por favor, valida tu correo electrónico."));
             }
@@ -119,10 +116,12 @@ public class AuthController {
             if (passwordEncoder.matches(userRequest.getPassword(), usuario.getPassword())) {
                 // Generar token y devolver datos
                 String token = jwtUtil.generateToken(usuario.getUsername(), usuario.getRol());
+                // MODIFICADO: Incluir el rol en la respuesta
                 Map<String, String> response = Map.of(
                         "token", token,
                         "username", usuario.getUsername(),
-                        "nombreCompleto", usuario.getNombreCompleto() != null ? usuario.getNombreCompleto() : ""
+                        "nombreCompleto", usuario.getNombreCompleto() != null ? usuario.getNombreCompleto() : "",
+                        "role", usuario.getRol() != null ? usuario.getRol() : "USER" // Asegúrate de que el rol nunca sea null
                 );
                 return ResponseEntity.ok(response);
             }
