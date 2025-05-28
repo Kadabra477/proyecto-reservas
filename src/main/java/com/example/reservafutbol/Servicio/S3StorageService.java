@@ -3,7 +3,7 @@ package com.example.reservafutbol.Servicio;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.CannedAccessControlList;
+import com.amazonaws.services.s3.model.CannedAccessControlList; // Mantener este import si lo necesitas para otras cosas, pero ya no se usará directamente en putObject
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -48,8 +48,9 @@ public class S3StorageService {
                 Objects.requireNonNull(multipartFile.getOriginalFilename()).replace(" ", "_");
 
         try {
-            s3Client.putObject(new PutObjectRequest(bucketName, fileName, file)
-                    .withCannedAcl(CannedAccessControlList.PublicRead));
+            // Eliminar la configuración de ACL, ya que el bucket no las permite.
+            // La visibilidad pública se maneja ahora exclusivamente por la Política de Bucket.
+            s3Client.putObject(new PutObjectRequest(bucketName, fileName, file)); // <-- ¡Cambio aquí! Se eliminó .withCannedAcl(...)
 
             String fileUrl = s3Client.getUrl(bucketName, fileName).toString();
             log.info("Archivo subido exitosamente a S3: {}", fileUrl);
@@ -57,11 +58,11 @@ public class S3StorageService {
 
         } catch (AmazonServiceException e) {
             log.error("Error en el servicio S3: {}", e.getMessage(), e);
-            throw new RuntimeException("Error al subir el archivo a S3.");
+            throw new RuntimeException("Error al subir el archivo a S3: " + e.getMessage());
 
         } catch (SdkClientException e) {
             log.error("Error de comunicación con AWS S3: {}", e.getMessage(), e);
-            throw new RuntimeException("Error de red al subir el archivo.");
+            throw new RuntimeException("Error de red al subir el archivo a S3: " + e.getMessage());
 
         } finally {
             if (file.exists() && !file.delete()) {
