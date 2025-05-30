@@ -12,6 +12,8 @@ import java.util.List;
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
     List<Reserva> findByCanchaId(Long canchaId);
+
+    // MODIFICADO: Usa @EntityGraph para cargar las relaciones 'usuario' y 'cancha'
     @EntityGraph(attributePaths = {"usuario", "cancha"})
     List<Reserva> findByUsuario(User usuario);
 
