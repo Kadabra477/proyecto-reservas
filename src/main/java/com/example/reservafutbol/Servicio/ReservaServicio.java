@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Transactional; // Importar Transactional
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -110,22 +110,22 @@ public class ReservaServicio {
         return reservaRepositorio.findAll();
     }
 
-    // --- OBTENER RESERVAS POR USERNAME (Usa el objeto User) ---
+    // MODIFICADO: Se añade @Transactional(readOnly = true) para asegurar la sesión abierta durante la carga de relaciones
+    @Transactional(readOnly = true)
     public List<Reserva> obtenerReservasPorUsername(String username) {
         log.debug("Buscando usuario con username/email: {}", username);
-        // Busca el usuario por su email (que es el username en tu caso)
         User usuario = usuarioRepositorio.findByUsername(username)
                 .orElseThrow(() -> {
                     log.warn("Usuario no encontrado para obtener reservas: {}", username);
-                    // Lanzar excepción específica o devolver lista vacía
                     return new UsernameNotFoundException("Usuario no encontrado: " + username);
                 });
-        log.info("Buscando reservas para Usuario ID: {}", usuario.getId());
-        // Llama al método del repositorio que busca por objeto User
-        return reservaRepositorio.findByUsuario(usuario);
+        log.info("Buscando reservas (con usuario y cancha) para Usuario ID: {}", usuario.getId());
+        // Llama al método del repositorio que ahora usa @EntityGraph
+        return reservaRepositorio.findByUsuario(usuario); // <-- Este método ahora carga las relaciones
     }
 
     // --- MARCAR COMO PAGADA ---
+    @Transactional // Es una operación de escritura
     public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
         reserva.setEstado("Pagada");
@@ -133,7 +133,6 @@ public class ReservaServicio {
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId); // este campo debe existir en tu entidad
         return reservaRepositorio.save(reserva);
     }
-
 
     // --- Generar Equipos (Sin cambios relevantes) ---
     @Transactional
