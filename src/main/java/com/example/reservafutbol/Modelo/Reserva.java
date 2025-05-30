@@ -34,7 +34,7 @@ public class Reserva {
     @Column(nullable = false)
     private String userEmail;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY) // LAZY para no cargar siempre la cancha
     @JoinColumn(name = "cancha_id", referencedColumnName = "id", nullable = false)
     private Cancha cancha;
 
@@ -54,7 +54,7 @@ public class Reserva {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal precio;
 
-    private Boolean pagada;// <-- Inicializado a false, reemplaza pagoRealizado
+    private Boolean pagada; // <-- Inicializado a false, reemplaza pagoRealizado
 
     // Estado general (se deriva de confirmada y pagada)
     @Column(nullable = false)
@@ -65,13 +65,16 @@ public class Reserva {
     private String mercadoPagoPaymentId; // Para guardar referencia del pago en MP
 
     // Información Opcional de Equipos
-    @ElementCollection(fetch = FetchType.LAZY)
+    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
+    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
     private List<String> jugadores;
 
-    @ElementCollection(fetch = FetchType.LAZY)
+    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
+    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
     private List<String> equipo1;
 
-    @ElementCollection(fetch = FetchType.LAZY)
+    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
+    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
     private List<String> equipo2;
 
     // --- Métodos Helper para actualizar estado ---
