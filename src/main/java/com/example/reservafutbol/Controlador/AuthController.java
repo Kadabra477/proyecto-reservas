@@ -171,6 +171,8 @@ public class AuthController {
         }
     }
     // --- FIN Endpoint Reset Password ---
+
+    // Validar token (para la autenticación inicial del frontend)
     @GetMapping("/validate-token")
     public ResponseEntity<?> validarToken(@RequestHeader("Authorization") String authHeader) {
         try {
@@ -185,6 +187,9 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado");
             }
         } catch (Exception e) {
+            // Aquí se capturan errores inesperados al procesar el encabezado, no necesariamente del token JWT en sí.
+            System.err.println("Error inesperado al validar token en AuthController: " + e.getMessage());
+            // e.printStackTrace(); // Considera quitar en producción
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error al validar token");
         }
     }

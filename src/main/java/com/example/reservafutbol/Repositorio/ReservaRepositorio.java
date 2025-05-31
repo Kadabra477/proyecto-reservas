@@ -13,8 +13,8 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
     List<Reserva> findByCanchaId(Long canchaId);
 
-    // MODIFICADO: Usa @EntityGraph para cargar las relaciones 'usuario' y 'cancha'
-    @EntityGraph(attributePaths = {"usuario", "cancha"})
+    // MODIFICADO: Usa @EntityGraph para cargar las relaciones 'usuario', 'cancha' y las colecciones de equipos/jugadores
+    @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
     List<Reserva> findByUsuario(User usuario);
 
     Reserva findByPreferenceId(String preferenceId);

@@ -1,8 +1,8 @@
 package com.example.reservafutbol.Controlador;
 
 // --- IMPORTACIONES NECESARIAS ---
-
-import com.example.reservafutbol.DTO.ReservaDTO;
+import com.example.reservafutbol.DTO.ReservaDetalleDTO; // Importar el nuevo DTO para la respuesta
+import com.example.reservafutbol.DTO.ReservaDTO; // Mantener el DTO para la entrada
 import com.example.reservafutbol.Modelo.Cancha;
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors; // ¡Importar Collectors!
 
 @RestController
 @RequestMapping("/api/reservas")
@@ -40,10 +41,9 @@ public class ReservaControlador {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    // --- OBTENER RESERVAS POR CANCHA (Sin cambios) ---
+    // --- OBTENER RESERVAS POR CANCHA (Sin cambios relevantes si no hay lazy loading issues aquí) ---
     @GetMapping("/cancha/{canchaId}")
     public ResponseEntity<List<Reserva>> obtenerReservasPorCancha(@PathVariable Long canchaId) {
-        // ... (código sin cambios) ...
         log.info("GET /api/reservas/cancha/{}", canchaId);
         List<Reserva> reservas = reservaServicio.listarReservas(canchaId);
         if (reservas.isEmpty()) {
@@ -52,28 +52,25 @@ public class ReservaControlador {
         return ResponseEntity.ok(reservas);
     }
 
-    // --- OBTENER TODAS (Admin - Sin cambios) ---
+    // --- OBTENER TODAS (Admin - Sin cambios relevantes) ---
     @GetMapping("/admin/todas")
     public ResponseEntity<List<Reserva>> obtenerTodas() {
-        // ... (código sin cambios) ...
         log.info("GET /api/reservas/admin/todas");
         return ResponseEntity.ok(reservaServicio.listarTodas());
     }
 
-    // --- OBTENER RESERVA POR ID (Sin cambios) ---
+    // --- OBTENER RESERVA POR ID (Sin cambios relevantes) ---
     @GetMapping("/{id}")
     public ResponseEntity<Reserva> obtenerPorId(@PathVariable Long id) {
-        // ... (código sin cambios) ...
         log.info("GET /api/reservas/{}", id);
         return reservaServicio.obtenerReserva(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // --- OBTENER RESERVAS DEL USUARIO AUTENTICADO (Sin cambios) ---
+    // --- OBTENER RESERVAS DEL USUARIO AUTENTICADO (MODIFICADO para usar ReservaDetalleDTO) ---
     @GetMapping("/usuario")
-    public ResponseEntity<List<Reserva>> obtenerPorUsuario(Authentication authentication) {
-        // ... (código sin cambios) ...
+    public ResponseEntity<List<ReservaDetalleDTO>> obtenerPorUsuario(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             log.warn("Intento de acceso a /api/reservas/usuario sin autenticación");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -82,7 +79,11 @@ public class ReservaControlador {
         log.info("GET /api/reservas/usuario para {}", username);
         try {
             List<Reserva> reservas = reservaServicio.obtenerReservasPorUsername(username);
-            return ResponseEntity.ok(reservas);
+            // Mapear la lista de entidades Reserva a ReservaDetalleDTOs
+            List<ReservaDetalleDTO> reservasDTO = reservas.stream()
+                    .map(ReservaDetalleDTO::new) // Usa el constructor del nuevo DTO
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(reservasDTO);
         } catch (UsernameNotFoundException e) {
             log.error("Usuario no encontrado al buscar sus reservas: {}", username);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -93,7 +94,7 @@ public class ReservaControlador {
     }
 
 
-    // --- CREAR RESERVA (Endpoint principal - CORREGIDO) ---
+    // --- CREAR RESERVA (Endpoint principal - CORREGIDO para usar tu ReservaDTO) ---
     @PostMapping("/crear")
     public ResponseEntity<?> crearReservaConDTO(@RequestBody ReservaDTO dto, Authentication authentication) {
         log.info("POST /api/reservas/crear por usuario {}", authentication.getName());
@@ -121,25 +122,22 @@ public class ReservaControlador {
         Cancha cancha = canchaOpt.get();
         User usuario = usuarioOpt.get();
 
-        LocalDateTime fechaHora;
-        try {
-            fechaHora = LocalDateTime.parse(dto.getFecha() + "T" + dto.getHora());
-            if (fechaHora.isBefore(LocalDateTime.now())) {
-                return ResponseEntity.badRequest().body("No se pueden crear reservas para fechas u horas pasadas.");
-            }
-        } catch (DateTimeParseException e) {
-            return ResponseEntity.badRequest().body("Formato de fecha (YYYY-MM-DD) u hora (HH:MM) inválido.");
+        // Combinar LocalDate y LocalTime en LocalDateTime
+        LocalDateTime fechaHora = LocalDateTime.of(dto.getFecha(), dto.getHora());
+
+        // Validar que la fecha y hora no sean pasadas
+        if (fechaHora.isBefore(LocalDateTime.now())) {
+            return ResponseEntity.badRequest().body("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
         Reserva nuevaReserva = new Reserva();
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setCancha(cancha);
-        nuevaReserva.setFechaHora(fechaHora);
+        nuevaReserva.setFechaHora(fechaHora); // Usar el LocalDateTime combinado
 
         // --- CORRECCIÓN Error 1: Convertir precio a BigDecimal ---
         if (cancha.getPrecioPorHora() != null) {
-            // Asumiendo que getPrecioPorHora() devuelve Double o double
             try {
                 nuevaReserva.setPrecio(BigDecimal.valueOf(cancha.getPrecioPorHora())); // Conversión segura
             } catch (NullPointerException | NumberFormatException ex) {
@@ -152,17 +150,23 @@ public class ReservaControlador {
         }
         // --- FIN CORRECCIÓN Error 1 ---
 
-
-        nuevaReserva.setCliente(dto.getNombre() != null && dto.getApellido() != null
+        nuevaReserva.setCliente(dto.getNombre() != null && dto.getApellido() != null && !dto.getNombre().trim().isEmpty()
                 ? dto.getNombre().trim() + " " + dto.getApellido().trim()
                 : usuario.getNombreCompleto()); // Asume que User tiene getNombreCompleto()
         nuevaReserva.setTelefono(dto.getTelefono() != null ? dto.getTelefono().trim() : null);
 
+        // Los campos de jugadores y equipos NO Vienen en tu ReservaDTO de creación
+        // Si necesitas que se envíen desde el frontend al crear, deberías añadirlos a tu ReservaDTO
+        // Por ahora, no se asignan aquí.
+        // nuevaReserva.setJugadores(dto.getJugadores());
+        // nuevaReserva.setEquipo1(dto.getEquipo1());
+        // nuevaReserva.setEquipo2(dto.getEquipo2());
 
         try {
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
             log.info("Reserva creada con ID: {}", reservaGuardada.getId());
-            return ResponseEntity.status(HttpStatus.CREATED).body(reservaGuardada);
+            // Opcional: devolver un ReservaDetalleDTO de la reserva creada si el frontend lo necesita
+            return ResponseEntity.status(HttpStatus.CREATED).body(new ReservaDetalleDTO(reservaGuardada));
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear reserva: {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -176,7 +180,6 @@ public class ReservaControlador {
     // --- CONFIRMAR RESERVA (Admin - Sin cambios) ---
     @PutMapping("/{id}/confirmar")
     public ResponseEntity<Reserva> confirmar(@PathVariable Long id) {
-        // ... (código sin cambios) ...
         log.info("PUT /api/reservas/{}/confirmar", id);
         try {
             return ResponseEntity.ok(reservaServicio.confirmarReserva(id));
@@ -193,7 +196,6 @@ public class ReservaControlador {
     public ResponseEntity<Reserva> marcarPagada(@PathVariable Long id,
                                                 @RequestParam String metodoPago,
                                                 @RequestParam(required = false) String mercadoPagoPaymentId) {
-        // ... (código sin cambios) ...
         log.info("PUT /api/reservas/{}/marcar-pagada - Metodo: {}, MP ID: {}", id, metodoPago, mercadoPagoPaymentId);
         try {
             Reserva reservaPagada = reservaServicio.marcarComoPagada(id, metodoPago, mercadoPagoPaymentId);
@@ -211,7 +213,6 @@ public class ReservaControlador {
     // --- GENERAR EQUIPOS (Sin cambios) ---
     @PutMapping("/{id}/equipos")
     public ResponseEntity<Reserva> generarEquipos(@PathVariable Long id) {
-        // ... (código sin cambios) ...
         log.info("PUT /api/reservas/{}/equipos", id);
         try {
             return ResponseEntity.ok(reservaServicio.generarEquipos(id));
@@ -226,7 +227,6 @@ public class ReservaControlador {
     // --- ELIMINAR RESERVA (Sin cambios) ---
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        // ... (código sin cambios) ...
         log.info("DELETE /api/reservas/{}", id);
         try {
             reservaServicio.eliminarReserva(id);

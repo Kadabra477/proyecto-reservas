@@ -1,8 +1,12 @@
 package com.example.reservafutbol.Configuracion;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException; // Importar
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException; // Importar
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.SignatureException; // Importar
+import io.jsonwebtoken.UnsupportedJwtException; // Importar
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -32,16 +36,23 @@ public class JWTUtil {
                 .signWith(SignatureAlgorithm.HS256, secretKey)
                 .compact();
     }
+
     public boolean isTokenValid(String token) {
         try {
             Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token);
             // Si llega aquí, es válido
             System.out.println(">>> JWT VÁLIDO para token que empieza con: " + (token != null && token.length() > 10 ? token.substring(0, 10) : "N/A")); // Log de éxito
             return true;
-        } catch (Exception e) {
-            // ¡Loguear el error específico!
+        } catch (ExpiredJwtException e) {
+            System.err.println(">>> ERROR al validar token: Token expirado. Mensaje=" + e.getMessage());
+            // No se necesita printStackTrace completo para errores de expiración, son comunes.
+            return false;
+        } catch (UnsupportedJwtException | MalformedJwtException | SignatureException | IllegalArgumentException e) {
+            // Loguear el error específico para otros tipos de fallos en el token
             System.err.println(">>> ERROR al validar token: Tipo=" + e.getClass().getName() + ", Mensaje=" + e.getMessage());
-            e.printStackTrace(); // <-- AÑADE ESTO para ver toda la traza del error
+            // Para estos tipos de errores, un printStackTrace completo puede ser útil en desarrollo.
+            // Considera usar un logger (slf4j) y configurar el nivel de log.
+            // e.printStackTrace(); // <-- Quitar en producción para no llenar logs
             return false;
         }
     }
