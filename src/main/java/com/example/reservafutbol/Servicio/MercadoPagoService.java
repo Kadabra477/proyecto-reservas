@@ -50,7 +50,6 @@ public class MercadoPagoService {
         log.info("Configurando Mercado Pago SDK...");
         if (accessToken == null || accessToken.isBlank()) {
             log.error("MERCADO_PAGO_ACCESS_TOKEN no está configurado. Abortando inicialización de Mercado Pago.");
-            // Considera lanzar una excepción o deshabilitar la funcionalidad si el token es crítico.
             throw new IllegalStateException("MERCADO_PAGO_ACCESS_TOKEN no está configurado. Abortando...");
         }
         MercadoPagoConfig.setAccessToken(accessToken);
@@ -89,14 +88,19 @@ public class MercadoPagoService {
             Preference preference = client.create(preferenceRequest);
             return preference.getInitPoint();
         } catch (MPApiException e) {
-            // ¡¡¡CAMBIO CRÍTICO AQUÍ: Loguear el contenido de la respuesta de error de MP!!!
-            String errorContent = e.getApiResponse() != null ? e.getApiResponse().getContent() : "No content available";
-            log.error("ERROR API Mercado Pago al crear preferencia. Status: {}, Mensaje: {}, Contenido de respuesta: {}",
-                    e.getStatusCode(), e.getMessage(), errorContent, e);
-            throw new MPException("Error en la API de Mercado Pago: " + errorContent, e); // Pasa el contenido al mensaje
+            String errorContent = "No content available";
+            if (e.getApiResponse() != null && e.getApiResponse().getContent() != null) {
+                errorContent = e.getApiResponse().getContent();
+            } else if (e.getMessage() != null) {
+                errorContent = e.getMessage();
+            }
+
+            log.error("ERROR API Mercado Pago al crear preferencia para reserva ID {}. Status: {}, Mensaje: {}, Contenido de respuesta: {}",
+                    reservaId, e.getStatusCode(), e.getMessage(), errorContent, e);
+            throw new MPException("Error en la API de Mercado Pago: " + errorContent, e);
         } catch (MPException e) {
-            log.error("Error general de Mercado Pago al crear preferencia: {}", e.getMessage(), e);
-            throw new MPException("Error al crear la preferencia de pago", e);
+            log.error("Error general de Mercado Pago al crear preferencia para reserva ID {}: {}", reservaId, e.getMessage(), e);
+            throw new MPException("Error al crear la preferencia de pago: " + e.getMessage(), e);
         }
     }
 }
