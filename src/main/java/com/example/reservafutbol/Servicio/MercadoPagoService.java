@@ -58,11 +58,23 @@ public class MercadoPagoService {
     public String crearPreferencia(Long reservaId, String pagador, BigDecimal monto) throws MPException, MPApiException {
         PreferenceClient client = new PreferenceClient();
 
+        // Asegurarse que el monto sea válido (no negativo, y con al menos 2 decimales si aplica)
+        // BigDecimal necesita un valor mínimo para ser válido en MP.
+        // Si el monto es cero o negativo, MP lo rechaza.
+        if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
+            log.error("Monto inválido o nulo para la preferencia de Mercado Pago. Reserva ID: {}, Monto: {}", reservaId, monto);
+            throw new IllegalArgumentException("El monto de la reserva para Mercado Pago debe ser un número positivo.");
+        }
+        // Redondear a dos decimales si es necesario para evitar problemas de precisión
+        monto = monto.setScale(2, BigDecimal.ROUND_HALF_UP);
+
+
+        // Item de la reserva
         PreferenceItemRequest item = PreferenceItemRequest.builder()
                 .id(String.valueOf(reservaId))
                 .title("Reserva de cancha #" + reservaId)
                 .description("Reserva realizada por " + pagador)
-                .quantity(1)
+                .quantity(1) // Asegurarse de que sea un Integer o Long válido y no nulo
                 .unitPrice(monto)
                 .currencyId("ARS")
                 .build();
@@ -70,6 +82,7 @@ public class MercadoPagoService {
         List<PreferenceItemRequest> items = new ArrayList<>();
         items.add(item);
 
+        // URLs de redirección luego del pago (apuntando al frontend)
         PreferenceBackUrlsRequest backUrls = PreferenceBackUrlsRequest.builder()
                 .success(frontendSuccessUrl)
                 .failure(frontendFailureUrl)
@@ -79,9 +92,9 @@ public class MercadoPagoService {
         PreferenceRequest preferenceRequest = PreferenceRequest.builder()
                 .items(items)
                 .backUrls(backUrls)
-                .autoReturn("approved")
-                .notificationUrl(notificationUrl)
-                .externalReference(String.valueOf(reservaId))
+                .autoReturn("approved") // Redirige automáticamente si el pago se aprueba
+                .notificationUrl(notificationUrl) // Usamos la URL configurada con el parámetro
+                .externalReference(String.valueOf(reservaId)) // Para poder identificar luego
                 .build();
 
         try {
