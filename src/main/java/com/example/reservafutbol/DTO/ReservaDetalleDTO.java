@@ -7,14 +7,15 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Date; // Para fechaPago
+import java.util.Date;
 import java.util.List;
+import java.util.Set; // Importa Set
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class ReservaDetalleDTO { // ¡Nuevo nombre de DTO!
+public class ReservaDetalleDTO {
     private Long id;
     private String userEmail;
     private Long canchaId;
@@ -29,15 +30,10 @@ public class ReservaDetalleDTO { // ¡Nuevo nombre de DTO!
     private String estado;
     private String metodoPago;
     private String mercadoPagoPaymentId;
-    private List<String> jugadores; // Para incluir los jugadores
-    private List<String> equipo1; // Para incluir equipo1
-    private List<String> equipo2; // Para incluir equipo2
-    // Puedes añadir más campos de la cancha si los necesitas
-    // private String canchaFotoUrl;
-    // private Double canchaPrecioPorHora;
+    private List<String> jugadores; // Puede seguir siendo List<String>
+    private Set<String> equipo1; // ¡Cambio a Set!
+    private Set<String> equipo2; // ¡Cambio a Set!
 
-
-    // Constructor para mapear desde la entidad Reserva
     public ReservaDetalleDTO(com.example.reservafutbol.Modelo.Reserva reserva) {
         this.id = reserva.getId();
         this.userEmail = reserva.getUserEmail();
@@ -54,9 +50,7 @@ public class ReservaDetalleDTO { // ¡Nuevo nombre de DTO!
         this.metodoPago = reserva.getMetodoPago();
         this.mercadoPagoPaymentId = reserva.getMercadoPagoPaymentId();
         this.jugadores = reserva.getJugadores();
-        this.equipo1 = reserva.getEquipo1();
-        this.equipo2 = reserva.getEquipo2();
-        // this.canchaFotoUrl = reserva.getCancha() != null ? reserva.getCancha().getFotoUrl() : null;
-        // this.canchaPrecioPorHora = reserva.getCancha() != null ? reserva.getCancha().getPrecioPorHora() : null;
+        this.equipo1 = reserva.getEquipo1(); // No hay problema en asignar Set a Set
+        this.equipo2 = reserva.getEquipo2(); // No hay problema en asignar Set a Set
     }
 }

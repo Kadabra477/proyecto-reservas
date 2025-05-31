@@ -9,13 +9,13 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Date;
-import java.util.List;
+import java.util.List; // Mantén si jugadores puede ser List
+import java.util.Set; // Importa Set
 
 @Entity
 @Table(name = "reservas")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
 public class Reserva {
-
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -24,69 +24,61 @@ public class Reserva {
     @Column(name = "preference_id")
     private String preferenceId;
 
-
-    // Relación con el usuario que realiza la reserva (más robusto)
-    @ManyToOne(fetch = FetchType.LAZY) // LAZY para no cargar siempre el usuario
-    @JoinColumn(name = "usuario_id") // Asegúrate que esta columna exista en tu BD
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usuario_id")
     private User usuario;
 
-    // Email denormalizado (útil si no siempre tienes el objeto User a mano)
     @Column(nullable = false)
     private String userEmail;
 
-    @ManyToOne(fetch = FetchType.LAZY) // LAZY para no cargar siempre la cancha
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cancha_id", referencedColumnName = "id", nullable = false)
     private Cancha cancha;
 
     @Column(nullable = false)
-    private String cliente; // Nombre de quien figura en la reserva (puede ser distinto al userEmail)
+    private String cliente;
 
     private String telefono;
 
     @Column(nullable = false)
-    private LocalDateTime fechaHora; // Fecha/Hora exacta de inicio
+    private LocalDateTime fechaHora;
 
-    // Estado de confirmación (ej. admin confirma que los datos son válidos)
     @Column(nullable = false)
     private Boolean confirmada = false;
 
-    // Precio total de esta reserva específica (copiado de la cancha o calculado)
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal precio;
 
-    private Boolean pagada; // <-- Inicializado a false, reemplaza pagoRealizado
+    private Boolean pagada;
 
-    // Estado general (se deriva de confirmada y pagada)
     @Column(nullable = false)
-    private String estado = "pendiente"; // "pendiente", "confirmada", "pagada", "cancelada"?
+    private String estado = "pendiente";
 
-    private String metodoPago; // "efectivo", "MercadoPago"
+    private String metodoPago;
     private Date fechaPago;
-    private String mercadoPagoPaymentId; // Para guardar referencia del pago en MP
+    private String mercadoPagoPaymentId;
 
     // Información Opcional de Equipos
-    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
-    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
-    private List<String> jugadores;
+    // MODIFICADO: Mantén List si el orden es crucial, pero Set resuelve el problema de fetch
+    @ElementCollection(fetch = FetchType.EAGER)
+    private List<String> jugadores; // Si el orden importa, déjalo como List
 
-    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
-    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
-    private List<String> equipo1;
+    // CAMBIO CLAVE: Cambiar List a Set para equipo1 y equipo2 para evitar MultipleBagFetchException
+    @ElementCollection(fetch = FetchType.EAGER)
+    private Set<String> equipo1; // ¡CAMBIO AQUÍ!
 
-    // MODIFICADO: FetchType a EAGER para resolver LazyInitializationException
-    @ElementCollection(fetch = FetchType.EAGER) // <-- ¡CAMBIO AQUÍ!
-    private List<String> equipo2;
+    @ElementCollection(fetch = FetchType.EAGER)
+    private Set<String> equipo2; // ¡CAMBIO AQUÍ!
 
-    // --- Métodos Helper para actualizar estado ---
-    @PreUpdate // Se ejecuta antes de actualizar en BD
-    @PrePersist // Se ejecuta antes de guardar por primera vez
+    @PreUpdate
+    @PrePersist
     public void actualizarEstadoGeneral() {
         if (Boolean.TRUE.equals(this.pagada)) {
             this.estado = "pagada";
         } else if (Boolean.TRUE.equals(this.confirmada)) {
-            this.estado = "confirmada"; // Confirmada pero no pagada aún
+            this.estado = "confirmada";
         } else {
-            this.estado = "pendiente"; // Ni confirmada ni pagada
+            this.estado = "pendiente";
         }
     }
 }

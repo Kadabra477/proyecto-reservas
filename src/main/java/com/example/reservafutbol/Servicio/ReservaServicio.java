@@ -9,13 +9,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // Importar Transactional
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet; // Importa HashSet
 import java.util.List;
 import java.util.Optional;
+import java.util.Set; // Importa Set
 
 @Service
 public class ReservaServicio {
@@ -26,22 +28,20 @@ public class ReservaServicio {
     private ReservaRepositorio reservaRepositorio;
 
     @Autowired
-    private UsuarioRepositorio usuarioRepositorio; // Inyectar repo de usuario
+    private UsuarioRepositorio usuarioRepositorio;
 
     public List<Reserva> listarReservas(Long canchaId) {
         log.info("Buscando reservas para cancha ID: {}", canchaId);
         return reservaRepositorio.findByCanchaId(canchaId);
     }
 
-    // --- CREAR RESERVA (Asume que el objeto viene con User y Precio seteados desde el controller) ---
-    @Transactional // Buena práctica para operaciones de escritura
+    @Transactional
     public Reserva crearReserva(Reserva reserva) {
         log.info("Intentando crear reserva para cancha ID: {} por usuario: {} en fecha/hora: {}",
                 reserva.getCancha() != null ? reserva.getCancha().getId() : "null",
-                reserva.getUsuario() != null ? reserva.getUsuario().getUsername() : reserva.getUserEmail(), // Loguear usuario
+                reserva.getUsuario() != null ? reserva.getUsuario().getUsername() : reserva.getUserEmail(),
                 reserva.getFechaHora());
 
-        // Validaciones básicas
         if (reserva.getUsuario() == null && (reserva.getUserEmail() == null || reserva.getUserEmail().isBlank())) {
             throw new IllegalArgumentException("La reserva debe estar asociada a un usuario (email).");
         }
@@ -55,16 +55,12 @@ public class ReservaServicio {
             throw new IllegalArgumentException("El precio de la reserva debe ser válido.");
         }
 
-        // Setear valores iniciales por defecto (aunque la entidad ya los tenga)
-        reserva.setConfirmada(false); // Las reservas inician sin confirmar
+        reserva.setConfirmada(false);
         reserva.setPagada(false);
-        reserva.setEstado("pendiente"); // El estado se actualizará con @PrePersist/Update
+        reserva.setEstado("pendiente");
         reserva.setMetodoPago(null);
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
-
-
-        // Aquí podrías añadir lógica para verificar disponibilidad horaria si es necesario
 
         Reserva reservaGuardada = reservaRepositorio.save(reserva);
         log.info("Reserva creada con ID: {}", reservaGuardada.getId());
@@ -87,8 +83,6 @@ public class ReservaServicio {
             return r;
         } else {
             r.setConfirmada(true);
-            // El estado se actualizará automáticamente por @PreUpdate en la entidad
-            // r.setEstado("confirmada"); // Ya no es necesario aquí
             Reserva reservaGuardada = reservaRepositorio.save(r);
             log.info("Reserva con ID: {} confirmada exitosamente.", id);
             return reservaGuardada;
@@ -110,7 +104,6 @@ public class ReservaServicio {
         return reservaRepositorio.findAll();
     }
 
-    // MODIFICADO: Se añade @Transactional(readOnly = true) para asegurar la sesión abierta durante la carga de relaciones
     @Transactional(readOnly = true)
     public List<Reserva> obtenerReservasPorUsername(String username) {
         log.debug("Buscando usuario con username/email: {}", username);
@@ -120,21 +113,19 @@ public class ReservaServicio {
                     return new UsernameNotFoundException("Usuario no encontrado: " + username);
                 });
         log.info("Buscando reservas (con usuario y cancha) para Usuario ID: {}", usuario.getId());
-        // Llama al método del repositorio que ahora usa @EntityGraph
-        return reservaRepositorio.findByUsuario(usuario); // <-- Este método ahora carga las relaciones
+        return reservaRepositorio.findByUsuario(usuario);
     }
 
-    // --- MARCAR COMO PAGADA ---
-    @Transactional // Es una operación de escritura
+    @Transactional
     public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
         reserva.setEstado("Pagada");
         reserva.setMetodoPago(metodoPago);
-        reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId); // este campo debe existir en tu entidad
+        reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
         return reservaRepositorio.save(reserva);
     }
 
-    // --- Generar Equipos (Sin cambios relevantes) ---
+    // MODIFICADO: Ajustado para usar Set<String> para los equipos
     @Transactional
     public Reserva generarEquipos(Long id) {
         log.info("Generando equipos para reserva ID: {}", id);
@@ -145,8 +136,10 @@ public class ReservaServicio {
             throw new IllegalArgumentException("Debes ingresar al menos 2 jugadores para armar equipos.");
         }
         Collections.shuffle(jugadores);
-        List<String> equipo1 = new ArrayList<>();
-        List<String> equipo2 = new ArrayList<>();
+
+        Set<String> equipo1 = new HashSet<>(); // Usa HashSet
+        Set<String> equipo2 = new HashSet<>(); // Usa HashSet
+
         for (int i = 0; i < jugadores.size(); i++) {
             if (i % 2 == 0) {
                 equipo1.add(jugadores.get(i));
