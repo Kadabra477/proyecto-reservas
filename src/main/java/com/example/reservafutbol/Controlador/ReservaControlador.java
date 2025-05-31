@@ -52,10 +52,11 @@ public class ReservaControlador {
         return ResponseEntity.ok(reservas);
     }
 
-    // --- OBTENER TODAS (Admin - Sin cambios relevantes) ---
+    // --- OBTENER TODAS (Admin - SIN CAMBIOS EN RETORNO, PERO EL SERVICIO AHORA CARGA EAGERLY) ---
     @GetMapping("/admin/todas")
     public ResponseEntity<List<Reserva>> obtenerTodas() {
         log.info("GET /api/reservas/admin/todas");
+        // Aquí el servicio llamará a findAll() del repositorio que ahora usa @EntityGraph
         return ResponseEntity.ok(reservaServicio.listarTodas());
     }
 

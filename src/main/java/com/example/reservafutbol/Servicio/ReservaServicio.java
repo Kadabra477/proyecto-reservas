@@ -14,10 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet; // Importa HashSet
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set; // Importa Set
+import java.util.Set;
 
 @Service
 public class ReservaServicio {
@@ -100,8 +100,12 @@ public class ReservaServicio {
         }
     }
 
+    // MODIFICADO: Añadimos @Transactional(readOnly = true) para asegurar que la sesión esté abierta
+    // cuando se accede a las relaciones cargadas por @EntityGraph.
+    // El método findAll() ahora usa el @EntityGraph en el repositorio.
+    @Transactional(readOnly = true)
     public List<Reserva> listarTodas() {
-        return reservaRepositorio.findAll();
+        return reservaRepositorio.findAll(); // Llama al findAll que usa el EntityGraph
     }
 
     @Transactional(readOnly = true)
@@ -125,7 +129,6 @@ public class ReservaServicio {
         return reservaRepositorio.save(reserva);
     }
 
-    // MODIFICADO: Ajustado para usar Set<String> para los equipos
     @Transactional
     public Reserva generarEquipos(Long id) {
         log.info("Generando equipos para reserva ID: {}", id);
@@ -137,8 +140,8 @@ public class ReservaServicio {
         }
         Collections.shuffle(jugadores);
 
-        Set<String> equipo1 = new HashSet<>(); // Usa HashSet
-        Set<String> equipo2 = new HashSet<>(); // Usa HashSet
+        Set<String> equipo1 = new HashSet<>();
+        Set<String> equipo2 = new HashSet<>();
 
         for (int i = 0; i < jugadores.size(); i++) {
             if (i % 2 == 0) {
