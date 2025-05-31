@@ -59,22 +59,28 @@ public class MercadoPagoService {
     public String crearPreferencia(Long reservaId, String pagador, BigDecimal monto) throws MPException, MPApiException {
         PreferenceClient client = new PreferenceClient();
 
-        // 1. Validar y redondear el monto ANTES de usarlo
+        // 1. Validar y redondear el monto antes de usarlo
         if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
             log.error("Monto inválido o nulo para la preferencia de Mercado Pago. Reserva ID: {}, Monto recibido: {}", reservaId, monto);
             throw new IllegalArgumentException("El monto de la reserva para Mercado Pago debe ser un número positivo y válido.");
         }
-        // Redondear a dos decimales, usando RoundingMode.HALF_UP (el más común para moneda)
         monto = monto.setScale(2, RoundingMode.HALF_UP);
 
 
         // 2. Construir el Item de la reserva.
-        // Aseguramos que 'quantity' es un Integer explícito y no nulo.
+        // Aseguramos que el título siempre sea un String no nulo.
+        String itemTitle = "Reserva de cancha";
+        if (reservaId != null) {
+            itemTitle += " #" + reservaId;
+        } else {
+            itemTitle += " (ID desconocido)"; // Fallback si reservaId fuera nulo por alguna razón
+        }
+
         PreferenceItemRequest item = PreferenceItemRequest.builder()
-                .id(String.valueOf(reservaId))
-                .title("Reserva de cancha #" + reservaId)
-                .description("Reserva realizada por " + pagador)
-                .quantity(Integer.valueOf(1)) // Asegurar que es un Integer y no un tipo primitivo que podría ser null
+                .id(String.valueOf(reservaId != null ? reservaId : 0)) // Asegurar que el ID no sea nulo, aunque ya se valida antes
+                .title(itemTitle) // Usar el título construido
+                .description("Reserva realizada por " + (pagador != null ? pagador : "Invitado")) // Asegurar que la descripción no sea nula
+                .quantity(Integer.valueOf(1))
                 .unitPrice(monto)
                 .currencyId("ARS")
                 .build();
@@ -92,9 +98,9 @@ public class MercadoPagoService {
         PreferenceRequest preferenceRequest = PreferenceRequest.builder()
                 .items(items)
                 .backUrls(backUrls)
-                .autoReturn("approved") // Redirige automáticamente si el pago se aprueba
-                .notificationUrl(notificationUrl) // Usamos la URL configurada con el parámetro
-                .externalReference(String.valueOf(reservaId)) // Para poder identificar luego
+                .autoReturn("approved")
+                .notificationUrl(notificationUrl)
+                .externalReference(String.valueOf(reservaId != null ? reservaId : "unknown_reserva")) // Asegurar externalReference no nulo
                 .build();
 
         try {
