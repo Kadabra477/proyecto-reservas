@@ -7,19 +7,24 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional; // Importar Optional
 
 @Repository
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
     List<Reserva> findByCanchaId(Long canchaId);
 
-    // Ya tenías este, que está bien para obtener las reservas de un usuario específico
     @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
     List<Reserva> findByUsuario(User usuario);
 
     Reserva findByPreferenceId(String preferenceId);
 
-    // NUEVO: Método para buscar todas las reservas cargando el usuario y la cancha eagerly
     @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
-    List<Reserva> findAll(); // Sobrescribe el findAll predeterminado para cargar las relaciones
+    List<Reserva> findAll();
+
+    // OPCIONAL: Añadir EntityGraph al findById si lo usas en otros lugares y necesitas el usuario/cancha.
+    // Esto asegura que la Reserva traída por ID también tenga el User y Cancha cargados.
+    @Override
+    @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
+    Optional<Reserva> findById(Long id);
 }
