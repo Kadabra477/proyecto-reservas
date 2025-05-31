@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,20 +22,29 @@ import java.util.List;
 public class MercadoPagoService {
 
     @Value("${backend.url}")
-    private String backendUrl;
+    private String backendUrl; // URL base de tu backend
 
     @Value("${frontend.url}")
-    private String frontendUrl;
+    private String frontendUrl; // URL base de tu frontend
 
-    @Value("${mercadopago.notification.url}")
+    @Value("${mercadopago.notification.url}") // Esta ya viene con el ?source_news=webhooks
     private String notificationUrl;
+
+    // URLs específicas para las redirecciones del frontend
+    @Value("${frontend.url.success}")
+    private String frontendSuccessUrl;
+
+    @Value("${frontend.url.failure}")
+    private String frontendFailureUrl;
+
+    @Value("${frontend.url.pending}")
+    private String frontendPendingUrl;
+
 
     private static final Logger log = LoggerFactory.getLogger(MercadoPagoService.class);
 
     @Value("${MERCADO_PAGO_ACCESS_TOKEN}")
     private String accessToken;
-
-    // Se recomienda mover esta URL a application.properties
 
     @PostConstruct
     public void init() {
@@ -46,6 +54,7 @@ public class MercadoPagoService {
         }
         MercadoPagoConfig.setAccessToken(accessToken);
     }
+
     public String crearPreferencia(Long reservaId, String pagador, BigDecimal monto) throws MPException, MPApiException {
         PreferenceClient client = new PreferenceClient();
 
@@ -62,26 +71,30 @@ public class MercadoPagoService {
         List<PreferenceItemRequest> items = new ArrayList<>();
         items.add(item);
 
-        // URLs de redirección luego del pago
+        // URLs de redirección luego del pago (ahora apuntando al frontend)
         PreferenceBackUrlsRequest backUrls = PreferenceBackUrlsRequest.builder()
-                .success(backendUrl + "/pagos/success")
-                .failure(backendUrl + "/pagos/failure")
-                .pending(backendUrl + "/pagos/pending")
+                .success(frontendSuccessUrl) // Redirige al frontend
+                .failure(frontendFailureUrl) // Redirige al frontend
+                .pending(frontendPendingUrl) // Redirige al frontend
                 .build();
 
         PreferenceRequest preferenceRequest = PreferenceRequest.builder()
                 .items(items)
                 .backUrls(backUrls)
                 .autoReturn("approved") // Redirige automáticamente si el pago se aprueba
-                .notificationUrl(notificationUrl)
+                .notificationUrl(notificationUrl) // Usamos la URL configurada con el parámetro
                 .externalReference(String.valueOf(reservaId)) // Para poder identificar luego
                 .build();
 
         try {
             Preference preference = client.create(preferenceRequest);
             return preference.getInitPoint();
-        } catch (MPApiException | MPException e) {
-            log.error("Error al crear la preferencia: {}", e.getMessage(), e);
+        } catch (MPApiException e) {
+            log.error("Error al crear la preferencia con la API de Mercado Pago: Status={}, Message={}, Response={}",
+                    e.getStatusCode(), e.getMessage(), e.getApiResponse().getContent(), e); // Loguear más detalles del error
+            throw new MPException("Error al crear la preferencia de pago con Mercado Pago", e);
+        } catch (MPException e) {
+            log.error("Error general al crear la preferencia de Mercado Pago: {}", e.getMessage(), e);
             throw new MPException("Error al crear la preferencia de pago", e);
         }
     }
