@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode; // Importar RoundingMode
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,23 +59,22 @@ public class MercadoPagoService {
     public String crearPreferencia(Long reservaId, String pagador, BigDecimal monto) throws MPException, MPApiException {
         PreferenceClient client = new PreferenceClient();
 
-        // Asegurarse que el monto sea válido (no negativo, y con al menos 2 decimales si aplica)
-        // BigDecimal necesita un valor mínimo para ser válido en MP.
-        // Si el monto es cero o negativo, MP lo rechaza.
+        // 1. Validar y redondear el monto ANTES de usarlo
         if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
-            log.error("Monto inválido o nulo para la preferencia de Mercado Pago. Reserva ID: {}, Monto: {}", reservaId, monto);
-            throw new IllegalArgumentException("El monto de la reserva para Mercado Pago debe ser un número positivo.");
+            log.error("Monto inválido o nulo para la preferencia de Mercado Pago. Reserva ID: {}, Monto recibido: {}", reservaId, monto);
+            throw new IllegalArgumentException("El monto de la reserva para Mercado Pago debe ser un número positivo y válido.");
         }
-        // Redondear a dos decimales si es necesario para evitar problemas de precisión
-        monto = monto.setScale(2, BigDecimal.ROUND_HALF_UP);
+        // Redondear a dos decimales, usando RoundingMode.HALF_UP (el más común para moneda)
+        monto = monto.setScale(2, RoundingMode.HALF_UP);
 
 
-        // Item de la reserva
+        // 2. Construir el Item de la reserva.
+        // Aseguramos que 'quantity' es un Integer explícito y no nulo.
         PreferenceItemRequest item = PreferenceItemRequest.builder()
                 .id(String.valueOf(reservaId))
                 .title("Reserva de cancha #" + reservaId)
                 .description("Reserva realizada por " + pagador)
-                .quantity(1) // Asegurarse de que sea un Integer o Long válido y no nulo
+                .quantity(Integer.valueOf(1)) // Asegurar que es un Integer y no un tipo primitivo que podría ser null
                 .unitPrice(monto)
                 .currencyId("ARS")
                 .build();
