@@ -75,8 +75,17 @@ public class ReservaServicio {
     @Transactional
     public Reserva confirmarReserva(Long id) {
         log.info("Intentando confirmar reserva con ID: {}", id);
+        // Usar findById con fetch de User/Cancha si es necesario aquí,
+        // o depender de que el DTO lo cargue al crearse.
+        // Si el EntityGraph en el findById está configurado, no hay problema.
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+
+        // Para asegurar que el User está cargado antes de que el DTO lo acceda si fuera necesario
+        // Aunque el DTO ya lo tiene como lazy en la entidad, al construir el DTO se accederá.
+        // Una forma de forzar la carga:
+        // Hibernate.initialize(r.getUsuario());
+        // Hibernate.initialize(r.getCancha());
 
         if (Boolean.TRUE.equals(r.getConfirmada())) {
             log.warn("Reserva con ID: {} ya estaba confirmada.", id);
@@ -85,6 +94,7 @@ public class ReservaServicio {
             r.setConfirmada(true);
             Reserva reservaGuardada = reservaRepositorio.save(r);
             log.info("Reserva con ID: {} confirmada exitosamente.", id);
+            // Retorna la reserva guardada. El controlador la mapeará al DTO.
             return reservaGuardada;
         }
     }
@@ -123,6 +133,8 @@ public class ReservaServicio {
     @Transactional
     public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
+        // Aquí también podríamos forzar la carga de usuario si no está en el DTO de confirmación.
+        // Hibernate.initialize(reserva.getUsuario());
         reserva.setEstado("Pagada");
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
@@ -134,6 +146,8 @@ public class ReservaServicio {
         log.info("Generando equipos para reserva ID: {}", id);
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+        // Aquí también podríamos forzar la carga de usuario si no está en el DTO de confirmación.
+        // Hibernate.initialize(r.getUsuario());
         List<String> jugadores = r.getJugadores();
         if (jugadores == null || jugadores.size() < 2) {
             throw new IllegalArgumentException("Debes ingresar al menos 2 jugadores para armar equipos.");

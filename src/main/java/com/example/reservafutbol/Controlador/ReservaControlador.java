@@ -176,14 +176,14 @@ public class ReservaControlador {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al guardar la reserva.");
         }
     }
-
-
-    // --- CONFIRMAR RESERVA (Admin - Sin cambios) ---
+    // --- CONFIRMAR RESERVA (MODIFICADO para devolver DTO) ---
     @PutMapping("/{id}/confirmar")
-    public ResponseEntity<Reserva> confirmar(@PathVariable Long id) {
+    public ResponseEntity<ReservaDetalleDTO> confirmar(@PathVariable Long id) { // Cambia el tipo de retorno
         log.info("PUT /api/reservas/{}/confirmar", id);
         try {
-            return ResponseEntity.ok(reservaServicio.confirmarReserva(id));
+            Reserva reservaConfirmada = reservaServicio.confirmarReserva(id);
+            // Mapear la entidad confirmada a DTO antes de devolverla
+            return ResponseEntity.ok(new ReservaDetalleDTO(reservaConfirmada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
         } catch (Exception e) {
@@ -192,15 +192,16 @@ public class ReservaControlador {
         }
     }
 
-    // --- MARCAR COMO PAGADA (Sin cambios) ---
+    // --- MARCAR COMO PAGADA (MODIFICADO para devolver DTO) ---
     @PutMapping("/{id}/marcar-pagada")
-    public ResponseEntity<Reserva> marcarPagada(@PathVariable Long id,
-                                                @RequestParam String metodoPago,
-                                                @RequestParam(required = false) String mercadoPagoPaymentId) {
+    public ResponseEntity<ReservaDetalleDTO> marcarPagada(@PathVariable Long id, // Cambia el tipo de retorno
+                                                          @RequestParam String metodoPago,
+                                                          @RequestParam(required = false) String mercadoPagoPaymentId) {
         log.info("PUT /api/reservas/{}/marcar-pagada - Metodo: {}, MP ID: {}", id, metodoPago, mercadoPagoPaymentId);
         try {
             Reserva reservaPagada = reservaServicio.marcarComoPagada(id, metodoPago, mercadoPagoPaymentId);
-            return ResponseEntity.ok(reservaPagada);
+            // Mapear la entidad pagada a DTO antes de devolverla
+            return ResponseEntity.ok(new ReservaDetalleDTO(reservaPagada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
         } catch (IllegalStateException e) {
@@ -211,12 +212,14 @@ public class ReservaControlador {
         }
     }
 
-    // --- GENERAR EQUIPOS (Sin cambios) ---
+    // --- GENERAR EQUIPOS (MODIFICADO para devolver DTO) ---
     @PutMapping("/{id}/equipos")
-    public ResponseEntity<Reserva> generarEquipos(@PathVariable Long id) {
+    public ResponseEntity<ReservaDetalleDTO> generarEquipos(@PathVariable Long id) { // Cambia el tipo de retorno
         log.info("PUT /api/reservas/{}/equipos", id);
         try {
-            return ResponseEntity.ok(reservaServicio.generarEquipos(id));
+            Reserva reservaConEquipos = reservaServicio.generarEquipos(id);
+            // Mapear la entidad con equipos a DTO antes de devolverla
+            return ResponseEntity.ok(new ReservaDetalleDTO(reservaConEquipos));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (Exception e) {
@@ -225,12 +228,13 @@ public class ReservaControlador {
         }
     }
 
-    // --- ELIMINAR RESERVA (Sin cambios) ---
+    // --- ELIMINAR RESERVA (MODIFICADO para devolver 204 No Content) ---
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) { // Cambia el tipo de retorno a Void
         log.info("DELETE /api/reservas/{}", id);
         try {
             reservaServicio.eliminarReserva(id);
+            // No devolver contenido para una eliminación exitosa (HTTP 204 No Content)
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
