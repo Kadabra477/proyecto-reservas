@@ -6,26 +6,28 @@ import com.example.reservafutbol.Modelo.Cancha;
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Servicio.CanchaServicio;
-import com.example.reservafutbol.Servicio.PdfGeneratorService; // Importar el servicio de PDF
+import com.example.reservafutbol.Servicio.PdfGeneratorService;
 import com.example.reservafutbol.Servicio.ReservaServicio;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
-import com.itextpdf.text.DocumentException; // Importar DocumentException para el PDF
+import com.itextpdf.text.DocumentException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.InputStreamResource; // Para servir archivos
-import org.springframework.http.HttpHeaders; // Para headers de respuesta
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType; // Para tipos de medios
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.ByteArrayInputStream; // Para el stream del PDF
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
@@ -46,12 +48,10 @@ public class ReservaControlador {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    @Autowired
-    private PdfGeneratorService pdfGeneratorService; // Inyectar el servicio de PDF
+    @Autowired(required = false) // Hacerlo opcional si no siempre está configurado (ej. para tests)
+    private PdfGeneratorService pdfGeneratorService;
 
-    // ... (Métodos existentes: obtenerReservasPorCancha, obtenerTodas, obtenerPorId, obtenerPorUsuario) ...
-
-    // --- OBTENER RESERVAS POR CANCHA (Sin cambios relevantes si no hay lazy loading issues aquí) ---
+    // --- OBTENER RESERVAS POR CANCHA ---
     @GetMapping("/cancha/{canchaId}")
     public ResponseEntity<List<Reserva>> obtenerReservasPorCancha(@PathVariable Long canchaId) {
         log.info("GET /api/reservas/cancha/{}", canchaId);
@@ -62,23 +62,30 @@ public class ReservaControlador {
         return ResponseEntity.ok(reservas);
     }
 
-    // --- OBTENER TODAS (Admin - SIN CAMBIOS EN RETORNO, PERO EL SERVICIO AHORA CARGA EAGERLY) ---
+    // --- OBTENER TODAS (Admin) ---
+    // Usar @PreAuthorize en SecurityConfig o directamente aquí para rol ADMIN
     @GetMapping("/admin/todas")
-    public ResponseEntity<List<Reserva>> obtenerTodas() {
+    // @PreAuthorize("hasRole('ADMIN')") // Si prefieres la seguridad directamente en el controlador
+    public ResponseEntity<List<ReservaDetalleDTO>> obtenerTodas() { // Retornar DTO para consistencia
         log.info("GET /api/reservas/admin/todas");
-        return ResponseEntity.ok(reservaServicio.listarTodas());
+        List<Reserva> reservas = reservaServicio.listarTodas();
+        List<ReservaDetalleDTO> reservasDTO = reservas.stream()
+                .map(ReservaDetalleDTO::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(reservasDTO);
     }
 
-    // --- OBTENER RESERVA POR ID (Sin cambios relevantes) ---
+    // --- OBTENER RESERVA POR ID ---
     @GetMapping("/{id}")
-    public ResponseEntity<Reserva> obtenerPorId(@PathVariable Long id) {
+    public ResponseEntity<ReservaDetalleDTO> obtenerPorId(@PathVariable Long id) { // Retornar DTO
         log.info("GET /api/reservas/{}", id);
         return reservaServicio.obtenerReserva(id)
+                .map(ReservaDetalleDTO::new) // Convertir a DTO
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // --- OBTENER RESERVAS DEL USUARIO AUTENTICADO (MODIFICADO para usar ReservaDetalleDTO) ---
+    // --- OBTENER RESERVAS DEL USUARIO AUTENTICADO ---
     @GetMapping("/usuario")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerPorUsuario(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -103,18 +110,22 @@ public class ReservaControlador {
     }
 
 
-    // --- CREAR RESERVA (MODIFICADO para recibir metodoPago) ---
+    // --- CREAR RESERVA (MODIFICADO) ---
     @PostMapping("/crear")
     public ResponseEntity<?> crearReservaConDTO(@RequestBody ReservaDTO dto, Authentication authentication) {
-        log.info("POST /api/reservas/crear por usuario {}", authentication.getName());
+        log.info("POST /api/reservas/crear por usuario {}", authentication != null ? authentication.getName() : "desconocido");
 
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Usuario no autenticado.");
         }
         String username = authentication.getName();
 
-        if (dto.getCanchaId() == null || dto.getFecha() == null || dto.getHora() == null || dto.getMetodoPago() == null) {
-            return ResponseEntity.badRequest().body("Faltan datos requeridos (canchaId, fecha, hora, metodoPago).");
+        if (dto.getCanchaId() == null || dto.getFecha() == null || dto.getHora() == null || dto.getMetodoPago() == null || dto.getTelefono() == null || dto.getNombre() == null || dto.getApellido() == null) {
+            return ResponseEntity.badRequest().body("Faltan datos requeridos (canchaId, fecha, hora, metodoPago, nombre, apellido, telefono).");
+        }
+        // Validar DNI si es necesario
+        if (dto.getDni() == null || !dto.getDni().matches("^\\d{7,8}$")) {
+            return ResponseEntity.badRequest().body("El DNI debe contener 7 u 8 dígitos numéricos.");
         }
 
         Optional<Cancha> canchaOpt = canchaServicio.buscarPorId(dto.getCanchaId());
@@ -131,9 +142,18 @@ public class ReservaControlador {
         Cancha cancha = canchaOpt.get();
         User usuario = usuarioOpt.get();
 
-        LocalDateTime fechaHora = LocalDateTime.of(dto.getFecha(), dto.getHora());
+        // Validar si la cancha está disponible
+        if (Boolean.FALSE.equals(cancha.getDisponible())) {
+            log.warn("Intento de reservar cancha no disponible: {}", cancha.getNombre());
+            return ResponseEntity.badRequest().body("Esta cancha no está disponible para reservas en este momento.");
+        }
 
-        if (fechaHora.isBefore(LocalDateTime.now())) {
+        LocalDateTime fechaHoraSolicitada = LocalDateTime.of(dto.getFecha(), dto.getHora());
+        LocalDateTime now = LocalDateTime.now();
+
+        // Validación de fecha y hora más robusta
+        if (fechaHoraSolicitada.isBefore(now)) {
+            log.warn("Intento de crear reserva para fecha/hora pasada. Solicitada: {}, Ahora: {}", fechaHoraSolicitada, now);
             return ResponseEntity.badRequest().body("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
@@ -141,37 +161,35 @@ public class ReservaControlador {
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setCancha(cancha);
-        nuevaReserva.setFechaHora(fechaHora);
-        nuevaReserva.setMetodoPago(dto.getMetodoPago()); // Setear el método de pago
+        nuevaReserva.setCanchaNombre(cancha.getNombre()); // Asignar el nombre de la cancha
+        nuevaReserva.setFechaHora(fechaHoraSolicitada);
+        nuevaReserva.setMetodoPago(dto.getMetodoPago());
+        nuevaReserva.setTelefono(dto.getTelefono().trim());
 
+        // Combina nombre y apellido para el campo 'cliente'
+        String nombreClienteCompleto = dto.getNombre().trim() + " " + dto.getApellido().trim();
+        nuevaReserva.setCliente(nombreClienteCompleto);
+
+        // Asigna el precio total desde la cancha
         if (cancha.getPrecioPorHora() != null) {
-            try {
-                nuevaReserva.setPrecio(BigDecimal.valueOf(cancha.getPrecioPorHora()));
-            } catch (NullPointerException | NumberFormatException ex) {
-                log.error("Error al convertir precioPorHora de cancha {} a BigDecimal: {}", cancha.getId(), cancha.getPrecioPorHora(), ex);
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al procesar el precio de la cancha.");
-            }
+            nuevaReserva.setPrecio(BigDecimal.valueOf(cancha.getPrecioPorHora()));
         } else {
             log.error("El precio por hora para la cancha {} es null.", cancha.getId());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno: Precio de la cancha no definido.");
         }
 
-        nuevaReserva.setCliente(dto.getNombre() != null && dto.getApellido() != null && !dto.getNombre().trim().isEmpty()
-                ? dto.getNombre().trim() + " " + dto.getApellido().trim()
-                : usuario.getNombreCompleto());
-        nuevaReserva.setTelefono(dto.getTelefono() != null ? dto.getTelefono().trim() : null);
-
         try {
-            // Si el pago es en efectivo, la reserva se marca como confirmada pero no pagada inicialmente
+            // La lógica de estado inicial (confirmada/pagada) antes de guardar
             if ("efectivo".equalsIgnoreCase(dto.getMetodoPago())) {
-                nuevaReserva.setConfirmada(true); // Se confirma directamente al ser efectivo
-                nuevaReserva.setPagada(false); // No está pagada aún
-                nuevaReserva.setEstado("confirmada_efectivo"); // Un estado específico para efectivo
-            } else { // Para Mercado Pago o cualquier otro método por defecto
-                nuevaReserva.setConfirmada(false); // Las reservas de MP esperan la confirmación del pago
+                nuevaReserva.setConfirmada(false); // Por defecto efectivo no está confirmado por admin aún
                 nuevaReserva.setPagada(false);
-                nuevaReserva.setEstado("pendiente_pago"); // Estado inicial para MP
+                nuevaReserva.setEstado("pendiente"); // Estado inicial pendiente de confirmación (si admin debe confirmarla)
+            } else { // Para Mercado Pago
+                nuevaReserva.setConfirmada(false); // MP siempre espera confirmación externa del pago
+                nuevaReserva.setPagada(false);
+                nuevaReserva.setEstado("pendiente_pago_mp");
             }
+            // La lógica @PrePersist en la entidad Reserva ajustará el campo 'estado' si es necesario.
 
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
             log.info("Reserva creada con ID: {}", reservaGuardada.getId());
@@ -185,7 +203,7 @@ public class ReservaControlador {
         }
     }
 
-    // --- CONFIRMAR RESERVA (MODIFICADO para devolver DTO) ---
+    // --- CONFIRMAR RESERVA ---
     @PutMapping("/{id}/confirmar")
     public ResponseEntity<ReservaDetalleDTO> confirmar(@PathVariable Long id) {
         log.info("PUT /api/reservas/{}/confirmar", id);
@@ -200,7 +218,7 @@ public class ReservaControlador {
         }
     }
 
-    // --- MARCAR COMO PAGADA (MODIFICADO para devolver DTO) ---
+    // --- MARCAR COMO PAGADA (para uso interno/admin) ---
     @PutMapping("/{id}/marcar-pagada")
     public ResponseEntity<ReservaDetalleDTO> marcarPagada(@PathVariable Long id,
                                                           @RequestParam String metodoPago,
@@ -219,7 +237,7 @@ public class ReservaControlador {
         }
     }
 
-    // --- GENERAR EQUIPOS (MODIFICADO para devolver DTO) ---
+    // --- GENERAR EQUIPOS ---
     @PutMapping("/{id}/equipos")
     public ResponseEntity<ReservaDetalleDTO> generarEquipos(@PathVariable Long id) {
         log.info("PUT /api/reservas/{}/equipos", id);
@@ -234,7 +252,7 @@ public class ReservaControlador {
         }
     }
 
-    // --- ELIMINAR RESERVA (MODIFICADO para devolver 204 No Content) ---
+    // --- ELIMINAR RESERVA ---
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         log.info("DELETE /api/reservas/{}", id);
@@ -253,6 +271,10 @@ public class ReservaControlador {
     @GetMapping(value = "/{reservaId}/pdf-comprobante", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<InputStreamResource> generarComprobantePdf(@PathVariable Long reservaId) {
         log.info("GET /api/reservas/{}/pdf-comprobante", reservaId);
+        if (pdfGeneratorService == null) {
+            log.error("PdfGeneratorService no está disponible. No se puede generar PDF.");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "El servicio de generación de PDF no está disponible.");
+        }
         try {
             Optional<Reserva> reservaOptional = reservaServicio.obtenerReserva(reservaId);
             if (reservaOptional.isEmpty()) {
@@ -263,7 +285,7 @@ public class ReservaControlador {
             ByteArrayInputStream bis = pdfGeneratorService.generarPDFReserva(reserva);
 
             HttpHeaders headers = new HttpHeaders();
-            headers.add("Content-Disposition", "inline; filename=comprobante_reserva_" + reservaId + ".pdf"); // inline para mostrar en navegador
+            headers.add("Content-Disposition", "inline; filename=comprobante_reserva_" + reservaId + ".pdf");
 
             return ResponseEntity
                     .ok()

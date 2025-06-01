@@ -23,4 +23,14 @@ public class Cancha {
     private String ubicacion;
     private Double precioPorHora;
     private Boolean disponible;
+
+    // NUEVOS CAMPOS: Para el frontend
+    @Column(nullable = false) // Podría ser null=true si no es obligatorio
+    private String tipoCancha; // Ej: "Fútbol 5", "Pádel", "Tenis"
+
+    @Column(nullable = false) // Podría ser null=true si no es obligatorio
+    private String superficie; // Ej: "Césped Sintético", "Polvo de ladrillo", "Cemento"
+
+    private Boolean iluminacion = false; // Por defecto sin iluminación
+    private Boolean techo = false;        // Por defecto sin techo
 }

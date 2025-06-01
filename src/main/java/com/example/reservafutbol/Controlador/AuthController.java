@@ -24,7 +24,6 @@ record ResetPasswordRequest(@NotBlank String token,
                             @NotBlank @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres") String newPassword) {}
 
 
-
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -76,12 +75,11 @@ public class AuthController {
             return ResponseEntity.ok("✅ Registro casi completo. Revisa tu correo electrónico ("+ usuarioGuardado.getUsername() +") para validar la cuenta.");
         } catch (Exception e) {
             System.err.println("Error en /register: " + e.getMessage());
-            // Podrías intentar borrar el usuario si el email falló, o manejarlo de otra forma
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("❌ Ocurrió un error interno durante el registro.");
         }
     }
 
-    // --- NUEVO ENDPOINT DE VALIDACIÓN ---
+    // --- ENDPOINT DE VALIDACIÓN ---
     @GetMapping("/validate")
     public ResponseEntity<String> validateAccount(@RequestParam("token") String token) {
         if (token == null || token.trim().isEmpty()) {
@@ -95,11 +93,10 @@ public class AuthController {
 
         } else {
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", frontendUrl + "/login?error=validation_failed") // Ajusta la URL del frontend
+                    .header("Location", frontendUrl + "/login?error=validation_failed")
                     .build();
         }
     }
-    // --- FIN ENDPOINT ---
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody User userRequest) {
@@ -114,50 +111,40 @@ public class AuthController {
 
             // Comparar contraseña
             if (passwordEncoder.matches(userRequest.getPassword(), usuario.getPassword())) {
-                // Generar token y devolver datos
                 String token = jwtUtil.generateToken(usuario.getUsername(), usuario.getRol());
-                // MODIFICADO: Incluir el rol en la respuesta
                 Map<String, String> response = Map.of(
                         "token", token,
                         "username", usuario.getUsername(),
                         "nombreCompleto", usuario.getNombreCompleto() != null ? usuario.getNombreCompleto() : "",
-                        "role", usuario.getRol() != null ? usuario.getRol() : "USER" // Asegúrate de que el rol nunca sea null
+                        "role", usuario.getRol() != null ? usuario.getRol() : "USER"
                 );
                 return ResponseEntity.ok(response);
             }
         }
-        // Si no encontró usuario o la contraseña no coincide
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Credenciales incorrectas"));
     }
-    // --- NUEVO: Endpoint para Solicitar Reseteo ---
+
+    // --- Endpoint para Solicitar Reseteo ---
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody ForgotPasswordRequest request) {
-        // Llama al servicio para crear el token
         String token = usuarioServicio.createPasswordResetToken(request.email());
 
-        // Si se generó un token (implica que el usuario existe y no hubo error)
         if (token != null) {
             try {
-                // Llama al servicio para enviar el email
                 emailService.sendPasswordResetEmail(request.email(), token);
-                // Devuelve un mensaje genérico para no revelar si el email existe
                 return ResponseEntity.ok(Map.of("message", "Si la dirección de correo está registrada, recibirás un enlace para restablecer tu contraseña."));
             } catch (Exception e) {
                 System.err.println("Error al ENVIAR email de reseteo para " + request.email() + ": " + e.getMessage());
-                // Error interno aunque el token se haya creado
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                         .body(Map.of("error", "Error al intentar enviar el correo de restablecimiento."));
             }
         } else {
-            // Si el servicio no generó token (usuario no encontrado), devuelve el mismo mensaje genérico
             System.out.println("Solicitud de reseteo para email no registrado: " + request.email());
             return ResponseEntity.ok(Map.of("message", "Si la dirección de correo está registrada, recibirás un enlace para restablecer tu contraseña."));
         }
     }
-    // --- FIN Endpoint Forgot Password ---
 
-
-    // --- NUEVO: Endpoint para Ejecutar el Reseteo ---
+    // --- Endpoint para Ejecutar el Reseteo ---
     @PostMapping("/reset-password")
     public ResponseEntity<Map<String, String>> resetPassword(@RequestBody ResetPasswordRequest request) {
         boolean success = usuarioServicio.resetPassword(request.token(), request.newPassword());
@@ -165,12 +152,10 @@ public class AuthController {
         if (success) {
             return ResponseEntity.ok(Map.of("message", "¡Contraseña actualizada con éxito!"));
         } else {
-            // El error puede ser token inválido, expirado o contraseña inválida
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "No se pudo restablecer la contraseña. El enlace puede ser inválido, haber expirado o la nueva contraseña no cumple los requisitos."));
         }
     }
-    // --- FIN Endpoint Reset Password ---
 
     // Validar token (para la autenticación inicial del frontend)
     @GetMapping("/validate-token")
@@ -179,7 +164,7 @@ public class AuthController {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no proporcionado o mal formado");
             }
-            String token = authHeader.substring(7); // Sacamos "Bearer "
+            String token = authHeader.substring(7);
             boolean valido = jwtUtil.isTokenValid(token);
             if (valido) {
                 return ResponseEntity.ok().build();
@@ -187,11 +172,8 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado");
             }
         } catch (Exception e) {
-            // Aquí se capturan errores inesperados al procesar el encabezado, no necesariamente del token JWT en sí.
             System.err.println("Error inesperado al validar token en AuthController: " + e.getMessage());
-            // e.printStackTrace(); // Considera quitar en producción
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error al validar token");
         }
     }
-
 }

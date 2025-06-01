@@ -16,7 +16,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.GrantedAuthority; // Importar GrantedAuthority
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
@@ -30,7 +30,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.stream.Collectors; // Importar Collectors
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
@@ -71,7 +71,6 @@ public class SecurityConfig {
                 }))
                 .authorizeHttpRequests(auth -> auth
                         // Rutas públicas que no requieren autenticación
-                        // Las rutas estáticas y otras se agrupan por separado del HttpMethod.GET
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
@@ -90,6 +89,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
                         .requestMatchers("/api/pagos/pdf/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // NUEVO: Proteger el endpoint de estadísticas para el rol ADMIN
+                        .requestMatchers("/api/estadisticas/admin").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
@@ -108,7 +109,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(frontendUrl, "https://proyecto-reservas-jsw5.onrender.com"));
+        // Asegúrate de que todas tus URLs de frontend (localhost, Vercel, etc.) estén aquí
+        config.setAllowedOrigins(List.of(frontendUrl, "https://proyecto-reservas-jsw5.onrender.com", "http://localhost:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         config.setAllowCredentials(true);
@@ -135,13 +137,12 @@ public class SecurityConfig {
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
                 String nombre = oauthUser.getAttribute("name");
-                // Obtener el rol del usuario OAuth2
                 String role = oauthUser.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority) // Convierte a String (ej. "ROLE_USER")
-                        .filter(a -> a.startsWith("ROLE_")) // Filtra para asegurar que es un rol
-                        .map(a -> a.substring(5)) // Quita "ROLE_" para obtener solo "USER" o "ADMIN"
+                        .map(GrantedAuthority::getAuthority)
+                        .filter(a -> a.startsWith("ROLE_"))
+                        .map(a -> a.substring(5))
                         .findFirst()
-                        .orElse("USER"); // Rol por defecto si no se encuentra ninguno
+                        .orElse("USER");
 
                 if (email == null || email.isBlank()) {
                     log.error("OAuth2 user email is null or blank");
@@ -150,13 +151,13 @@ public class SecurityConfig {
                 }
 
                 try {
-                    String token = jwtUtil.generateTokenFromEmail(email); // Asumo que generateTokenFromEmail maneja la lógica para el token
-                    String targetUrl = frontendUrl + "/oauth2-success?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+                    String token = jwtUtil.generateTokenFromEmail(email);
+                    String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8); // Ajuste aquí la ruta de redirección del frontend para OAuth2
                     if (nombre != null && !nombre.isEmpty()) {
                         targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
                     }
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
-                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8); // <-- Añadir el rol aquí
+                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);

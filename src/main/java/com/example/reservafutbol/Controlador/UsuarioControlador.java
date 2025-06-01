@@ -43,7 +43,7 @@ public class UsuarioControlador {
                 user.getUbicacion(),
                 user.getEdad(),
                 user.getBio(),
-                user.getUsername(),
+                user.getUsername(), // El email es el username
                 user.getProfilePictureUrl()
         );
 
@@ -59,6 +59,8 @@ public class UsuarioControlador {
         }
 
         User user = optUser.get();
+        // Llama al servicio para actualizar solo los campos que vienen en el DTO
+        // y que son de un PerfilDTO (nombreCompleto, ubicacion, edad, bio)
         usuarioServicio.updateUserProfile(
                 user,
                 perfilDTO.getNombreCompleto(),

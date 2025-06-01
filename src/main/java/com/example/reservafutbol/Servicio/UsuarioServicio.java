@@ -133,7 +133,7 @@ public class UsuarioServicio implements UserDetailsService {
         return true;
     }
 
-    // --- Nuevos métodos para el perfil ---
+    // --- Métodos para el perfil ---
 
     @Transactional(readOnly = true)
     public Optional<User> getUserProfileByEmail(String email) {
@@ -142,16 +142,18 @@ public class UsuarioServicio implements UserDetailsService {
 
     @Transactional
     public User updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
+        // En tu DTO, PerfilDTO, no estás enviando 'email' o 'profilePictureUrl' para actualizar aquí,
+        // solo se usan para mostrar. Si el frontend puede cambiar email/foto desde aquí, se necesitaría lógica adicional.
+        // Asumiendo que solo se actualizan los campos que vienen en el DTO.
         if (nombreCompleto != null) {
             user.setNombreCompleto(nombreCompleto);
         }
         if (ubicacion != null) {
             user.setUbicacion(ubicacion);
         }
-        // Solo actualizar edad si no es nula. Si viene 0, puede ser intencional o un error.
-        // Se sugiere que el frontend envíe null o "" para "sin valor" y 0 para "cero años".
-        // Aquí asumimos que null significa que no se debe actualizar.
-        user.setEdad(edad); // Se permite null si el DTO lo envía como null
+        // Importante: si 'edad' puede venir como 0 (un valor válido), el 'if (edad != null)' está bien.
+        // Si 0 en el frontend significa "no especificado", entonces el frontend debería enviar null.
+        user.setEdad(edad);
         if (bio != null) {
             user.setBio(bio);
         }
