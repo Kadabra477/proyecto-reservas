@@ -13,6 +13,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
+import java.time.ZoneId; // Importar ZoneId
+import java.util.Date; // Importar Date
 import java.util.Locale;
 
 @Service
@@ -20,7 +22,7 @@ public class PdfGeneratorService {
 
     private static final Logger log = LoggerFactory.getLogger(PdfGeneratorService.class);
 
-    public ByteArrayInputStream generarPDFReserva(Reserva reserva) throws DocumentException { // Cambiado 'r' a 'reserva'
+    public ByteArrayInputStream generarPDFReserva(Reserva reserva) throws DocumentException {
         log.info("Generando PDF para Reserva ID: {}", reserva.getId());
         Document doc = new Document(PageSize.A4);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -59,16 +61,24 @@ public class PdfGeneratorService {
             addCell(tabla, reserva.getCliente() != null ? reserva.getCliente() : "N/A", textoFont);
 
             addCell(tabla, "Email Usuario:", subtituloFont);
-            addCell(tabla, reserva.getUserEmail() != null ? reserva.getUserEmail() : "N/A", textoFont);
+            // Asegurarse de que el usuario no sea nulo antes de intentar getUserEmail
+            addCell(tabla, reserva.getUsuario() != null && reserva.getUsuario().getUsername() != null ? reserva.getUsuario().getUsername() : "N/A", textoFont);
 
             addCell(tabla, "Teléfono:", subtituloFont);
             addCell(tabla, reserva.getTelefono() != null ? reserva.getTelefono() : "N/A", textoFont);
 
             addCell(tabla, "Cancha:", subtituloFont);
+            // Asegurarse de que la cancha no sea nula antes de intentar getNombre
             addCell(tabla, reserva.getCancha() != null && reserva.getCancha().getNombre() != null ? reserva.getCancha().getNombre() : "N/A", textoFont);
 
             addCell(tabla, "Fecha y Hora:", subtituloFont);
-            addCell(tabla, reserva.getFechaHora() != null ? formatter.format(reserva.getFechaHora()) : "N/A", textoFont);
+            // MODIFICADO: Convertir LocalDateTime a Date para SimpleDateFormat
+            if (reserva.getFechaHora() != null) {
+                Date fechaHoraDate = Date.from(reserva.getFechaHora().atZone(ZoneId.systemDefault()).toInstant());
+                addCell(tabla, formatter.format(fechaHoraDate), textoFont);
+            } else {
+                addCell(tabla, "N/A", textoFont);
+            }
 
             // --- Estado y Pago ---
             String estadoTexto;
@@ -78,9 +88,8 @@ public class PdfGeneratorService {
                 estadoTexto = "Confirmada (Pendiente de Pago en Efectivo)";
             } else if ("mercadopago".equalsIgnoreCase(reserva.getMetodoPago()) && !Boolean.TRUE.equals(reserva.getPagada())) {
                 estadoTexto = "Pendiente de Pago (Mercado Pago)";
-            }
-            else {
-                estadoTexto = "Pendiente de Confirmación";
+            } else {
+                estadoTexto = "Pendiente de Confirmación"; // Estado por defecto si no encaja
             }
             addCell(tabla, "Estado Reserva:", subtituloFont);
             addCell(tabla, estadoTexto, textoFont);

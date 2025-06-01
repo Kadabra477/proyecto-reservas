@@ -35,14 +35,13 @@ public class ReservaServicio {
         return reservaRepositorio.findByCanchaId(canchaId);
     }
 
-    // MODIFICADO: Lógica para establecer estado inicial según método de pago
     @Transactional
     public Reserva crearReserva(Reserva reserva) {
         log.info("Intentando crear reserva para cancha ID: {} por usuario: {} en fecha/hora: {} con método de pago: {}",
                 reserva.getCancha() != null ? reserva.getCancha().getId() : "null",
                 reserva.getUsuario() != null ? reserva.getUsuario().getUsername() : reserva.getUserEmail(),
                 reserva.getFechaHora(),
-                reserva.getMetodoPago()); // Loguear el método de pago
+                reserva.getMetodoPago());
 
         if (reserva.getUsuario() == null && (reserva.getUserEmail() == null || reserva.getUserEmail().isBlank())) {
             throw new IllegalArgumentException("La reserva debe estar asociada a un usuario (email).");
@@ -60,12 +59,10 @@ public class ReservaServicio {
             throw new IllegalArgumentException("El método de pago es obligatorio.");
         }
 
-        // Se inicializan aquí, pero se sobrescribirán en el controlador
-        // según la lógica de pago.
         reserva.setConfirmada(false);
         reserva.setPagada(false);
         reserva.setEstado("pendiente");
-        reserva.setMetodoPago(reserva.getMetodoPago()); // Asegurarse que se guarda el método de pago
+        reserva.setMetodoPago(reserva.getMetodoPago());
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
 
@@ -74,10 +71,11 @@ public class ReservaServicio {
         return reservaGuardada;
     }
 
-    @Transactional(readOnly = true) // Añadir Transactional para asegurar la carga de relaciones
+    // MODIFICADO: Añadir @Transactional(readOnly = true) para asegurar la carga eagerly del EntityGraph
+    @Transactional(readOnly = true)
     public Optional<Reserva> obtenerReserva(Long id) {
         log.info("Buscando reserva con ID: {}", id);
-        // Usa el findById con EntityGraph de ReservaRepositorio
+        // Usa el findById con EntityGraph de ReservaRepositorio que ya definimos
         return reservaRepositorio.findById(id);
     }
 
@@ -92,11 +90,9 @@ public class ReservaServicio {
             return r;
         } else {
             r.setConfirmada(true);
-            // Si la reserva se confirma y el método de pago es efectivo, su estado ya es "confirmada_efectivo"
-            // Si el método de pago es MP, su estado sigue siendo "pendiente_pago" hasta que el webhook de MP la actualice a "pagada"
             if ("efectivo".equalsIgnoreCase(r.getMetodoPago())) {
                 r.setEstado("confirmada_efectivo");
-            } else if (!Boolean.TRUE.equals(r.getPagada())){ // Si es MP y no pagada
+            } else if (!Boolean.TRUE.equals(r.getPagada())){
                 r.setEstado("confirmada"); // O un estado intermedio si se requiere
             }
             Reserva reservaGuardada = reservaRepositorio.save(r);
@@ -136,8 +132,8 @@ public class ReservaServicio {
     @Transactional
     public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
-        reserva.setEstado("pagada"); // Ya está configurado con "pagada" por la notificación de MP
-        reserva.setPagada(true); // Se establece como pagada
+        reserva.setEstado("pagada");
+        reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
         return reservaRepositorio.save(reserva);
