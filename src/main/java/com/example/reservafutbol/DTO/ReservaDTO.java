@@ -1,6 +1,7 @@
 package com.example.reservafutbol.DTO;
 
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.NotBlank; // Importar NotBlank
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -20,7 +21,11 @@ public class ReservaDTO {
     @NotNull(message = "La hora es obligatoria")
     private LocalTime hora;
 
-    private String nombre; // opcional si lo toma del usuario autenticado
+    private String nombre;
     private String apellido;
+    private String dni; // Añadir DNI al DTO de entrada si se envía
     private String telefono;
+
+    @NotBlank(message = "El método de pago es obligatorio") // Validar que el método de pago no sea nulo/vacío
+    private String metodoPago; // Nuevo campo para el método de pago
 }

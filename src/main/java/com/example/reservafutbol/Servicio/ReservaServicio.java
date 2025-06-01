@@ -35,12 +35,14 @@ public class ReservaServicio {
         return reservaRepositorio.findByCanchaId(canchaId);
     }
 
+    // MODIFICADO: Lógica para establecer estado inicial según método de pago
     @Transactional
     public Reserva crearReserva(Reserva reserva) {
-        log.info("Intentando crear reserva para cancha ID: {} por usuario: {} en fecha/hora: {}",
+        log.info("Intentando crear reserva para cancha ID: {} por usuario: {} en fecha/hora: {} con método de pago: {}",
                 reserva.getCancha() != null ? reserva.getCancha().getId() : "null",
                 reserva.getUsuario() != null ? reserva.getUsuario().getUsername() : reserva.getUserEmail(),
-                reserva.getFechaHora());
+                reserva.getFechaHora(),
+                reserva.getMetodoPago()); // Loguear el método de pago
 
         if (reserva.getUsuario() == null && (reserva.getUserEmail() == null || reserva.getUserEmail().isBlank())) {
             throw new IllegalArgumentException("La reserva debe estar asociada a un usuario (email).");
@@ -54,11 +56,16 @@ public class ReservaServicio {
         if (reserva.getPrecio() == null || reserva.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("El precio de la reserva debe ser válido.");
         }
+        if (reserva.getMetodoPago() == null || reserva.getMetodoPago().isBlank()) {
+            throw new IllegalArgumentException("El método de pago es obligatorio.");
+        }
 
+        // Se inicializan aquí, pero se sobrescribirán en el controlador
+        // según la lógica de pago.
         reserva.setConfirmada(false);
         reserva.setPagada(false);
         reserva.setEstado("pendiente");
-        reserva.setMetodoPago(null);
+        reserva.setMetodoPago(reserva.getMetodoPago()); // Asegurarse que se guarda el método de pago
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
 
@@ -67,34 +74,33 @@ public class ReservaServicio {
         return reservaGuardada;
     }
 
+    @Transactional(readOnly = true) // Añadir Transactional para asegurar la carga de relaciones
     public Optional<Reserva> obtenerReserva(Long id) {
         log.info("Buscando reserva con ID: {}", id);
+        // Usa el findById con EntityGraph de ReservaRepositorio
         return reservaRepositorio.findById(id);
     }
 
     @Transactional
     public Reserva confirmarReserva(Long id) {
         log.info("Intentando confirmar reserva con ID: {}", id);
-        // Usar findById con fetch de User/Cancha si es necesario aquí,
-        // o depender de que el DTO lo cargue al crearse.
-        // Si el EntityGraph en el findById está configurado, no hay problema.
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
-
-        // Para asegurar que el User está cargado antes de que el DTO lo acceda si fuera necesario
-        // Aunque el DTO ya lo tiene como lazy en la entidad, al construir el DTO se accederá.
-        // Una forma de forzar la carga:
-        // Hibernate.initialize(r.getUsuario());
-        // Hibernate.initialize(r.getCancha());
 
         if (Boolean.TRUE.equals(r.getConfirmada())) {
             log.warn("Reserva con ID: {} ya estaba confirmada.", id);
             return r;
         } else {
             r.setConfirmada(true);
+            // Si la reserva se confirma y el método de pago es efectivo, su estado ya es "confirmada_efectivo"
+            // Si el método de pago es MP, su estado sigue siendo "pendiente_pago" hasta que el webhook de MP la actualice a "pagada"
+            if ("efectivo".equalsIgnoreCase(r.getMetodoPago())) {
+                r.setEstado("confirmada_efectivo");
+            } else if (!Boolean.TRUE.equals(r.getPagada())){ // Si es MP y no pagada
+                r.setEstado("confirmada"); // O un estado intermedio si se requiere
+            }
             Reserva reservaGuardada = reservaRepositorio.save(r);
             log.info("Reserva con ID: {} confirmada exitosamente.", id);
-            // Retorna la reserva guardada. El controlador la mapeará al DTO.
             return reservaGuardada;
         }
     }
@@ -110,12 +116,9 @@ public class ReservaServicio {
         }
     }
 
-    // MODIFICADO: Añadimos @Transactional(readOnly = true) para asegurar que la sesión esté abierta
-    // cuando se accede a las relaciones cargadas por @EntityGraph.
-    // El método findAll() ahora usa el @EntityGraph en el repositorio.
     @Transactional(readOnly = true)
     public List<Reserva> listarTodas() {
-        return reservaRepositorio.findAll(); // Llama al findAll que usa el EntityGraph
+        return reservaRepositorio.findAll();
     }
 
     @Transactional(readOnly = true)
@@ -133,9 +136,8 @@ public class ReservaServicio {
     @Transactional
     public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
-        // Aquí también podríamos forzar la carga de usuario si no está en el DTO de confirmación.
-        // Hibernate.initialize(reserva.getUsuario());
-        reserva.setEstado("Pagada");
+        reserva.setEstado("pagada"); // Ya está configurado con "pagada" por la notificación de MP
+        reserva.setPagada(true); // Se establece como pagada
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
         return reservaRepositorio.save(reserva);
@@ -146,8 +148,6 @@ public class ReservaServicio {
         log.info("Generando equipos para reserva ID: {}", id);
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
-        // Aquí también podríamos forzar la carga de usuario si no está en el DTO de confirmación.
-        // Hibernate.initialize(r.getUsuario());
         List<String> jugadores = r.getJugadores();
         if (jugadores == null || jugadores.size() < 2) {
             throw new IllegalArgumentException("Debes ingresar al menos 2 jugadores para armar equipos.");

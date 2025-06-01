@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
-import java.util.Set; // Importa Set
+import java.util.Set;
 
 @Getter
 @Setter
@@ -28,11 +28,11 @@ public class ReservaDetalleDTO {
     private BigDecimal precio;
     private Boolean pagada;
     private String estado;
-    private String metodoPago;
+    private String metodoPago; // Nuevo campo
     private String mercadoPagoPaymentId;
-    private List<String> jugadores; // Puede seguir siendo List<String>
-    private Set<String> equipo1; // ¡Cambio a Set!
-    private Set<String> equipo2; // ¡Cambio a Set!
+    private List<String> jugadores;
+    private Set<String> equipo1;
+    private Set<String> equipo2;
 
     public ReservaDetalleDTO(com.example.reservafutbol.Modelo.Reserva reserva) {
         this.id = reserva.getId();
@@ -47,10 +47,10 @@ public class ReservaDetalleDTO {
         this.precio = reserva.getPrecio();
         this.pagada = reserva.getPagada();
         this.estado = reserva.getEstado();
-        this.metodoPago = reserva.getMetodoPago();
+        this.metodoPago = reserva.getMetodoPago(); // Asignar el método de pago
         this.mercadoPagoPaymentId = reserva.getMercadoPagoPaymentId();
         this.jugadores = reserva.getJugadores();
-        this.equipo1 = reserva.getEquipo1(); // No hay problema en asignar Set a Set
-        this.equipo2 = reserva.getEquipo2(); // No hay problema en asignar Set a Set
+        this.equipo1 = reserva.getEquipo1();
+        this.equipo2 = reserva.getEquipo2();
     }
 }

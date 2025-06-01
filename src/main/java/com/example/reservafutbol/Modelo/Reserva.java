@@ -9,8 +9,8 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Date;
-import java.util.List; // Mantén si jugadores puede ser List
-import java.util.Set; // Importa Set
+import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "reservas")
@@ -52,31 +52,36 @@ public class Reserva {
     private Boolean pagada;
 
     @Column(nullable = false)
-    private String estado = "pendiente";
+    private String estado = "pendiente"; // Estados: "pendiente", "confirmada_efectivo", "pendiente_pago", "pagada", "rechazada_pago_mp", "cancelada"
 
-    private String metodoPago;
+    private String metodoPago; // "efectivo", "mercadopago"
     private Date fechaPago;
     private String mercadoPagoPaymentId;
 
-    // Información Opcional de Equipos
-    // MODIFICADO: Mantén List si el orden es crucial, pero Set resuelve el problema de fetch
     @ElementCollection(fetch = FetchType.EAGER)
-    private List<String> jugadores; // Si el orden importa, déjalo como List
-
-    // CAMBIO CLAVE: Cambiar List a Set para equipo1 y equipo2 para evitar MultipleBagFetchException
-    @ElementCollection(fetch = FetchType.EAGER)
-    private Set<String> equipo1; // ¡CAMBIO AQUÍ!
+    private List<String> jugadores;
 
     @ElementCollection(fetch = FetchType.EAGER)
-    private Set<String> equipo2; // ¡CAMBIO AQUÍ!
+    private Set<String> equipo1;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    private Set<String> equipo2;
+
+    // MODIFICADO: Lógica de actualización de estado general
     @PreUpdate
     @PrePersist
     public void actualizarEstadoGeneral() {
         if (Boolean.TRUE.equals(this.pagada)) {
             this.estado = "pagada";
+        } else if ("efectivo".equalsIgnoreCase(this.metodoPago) && Boolean.TRUE.equals(this.confirmada)) {
+            this.estado = "confirmada_efectivo"; // Confirmada pero no pagada aún (para efectivo)
+        } else if ("mercadopago".equalsIgnoreCase(this.metodoPago) && !Boolean.TRUE.equals(this.pagada)) {
+            // Si es Mercado Pago y no está pagada (o fue rechazada/pendiente), el estado lo maneja el webhook de MP
+            if (this.estado == null || this.estado.equals("pendiente")) { // Solo si no ha sido actualizado por MP
+                this.estado = "pendiente_pago";
+            }
         } else if (Boolean.TRUE.equals(this.confirmada)) {
-            this.estado = "confirmada";
+            this.estado = "confirmada"; // Para otros casos de confirmación
         } else {
             this.estado = "pendiente";
         }
