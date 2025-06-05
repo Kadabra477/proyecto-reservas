@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.slf4j.LoggerFactory; // Asegúrate de importar LoggerFactory
 
 import java.util.List;
 import java.util.Optional;
@@ -17,7 +17,7 @@ import java.util.Optional;
 @RequestMapping("/api/canchas")
 public class CanchaControlador {
 
-    private static final Logger log = LoggerFactory.getLogger(CanchaControlador.class);
+    private static final Logger log = LoggerFactory.getLogger(CanchaControlador.class); // Declaración del logger
 
     @Autowired
     private CanchaServicio canchaServicio;
@@ -26,7 +26,8 @@ public class CanchaControlador {
     @GetMapping
     public ResponseEntity<List<Cancha>> obtenerCanchas() {
         log.info("GET /api/canchas - Obteniendo todas las canchas.");
-        List<Cancha> canchas = canchaServicio.listarCanchas();
+        // CORREGIDO: Cambiado listarCanchas() a listarTodasCanchas()
+        List<Cancha> canchas = canchaServicio.listarTodasCanchas();
         if (canchas.isEmpty()) {
             return ResponseEntity.noContent().build();
         }
@@ -52,7 +53,7 @@ public class CanchaControlador {
             return new ResponseEntity<>(nuevaCancha, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear cancha: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(null); // O un DTO de error si lo tienes
+            return ResponseEntity.badRequest().body(null);
         } catch (Exception e) {
             log.error("Error inesperado al crear cancha:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
@@ -67,13 +68,18 @@ public class CanchaControlador {
         try {
             Cancha canchaActualizada = canchaServicio.actualizarCancha(id, cancha);
             return new ResponseEntity<>(canchaActualizada, HttpStatus.OK);
-        } catch (IllegalArgumentException e) {
+        }
+        // Se puede añadir un manejo específico para NotFound si el error es de ID inexistente
+        // } catch (NoSuchElementException e) { // Si el servicio lanza NoSuchElementException
+        //     log.warn("Cancha no encontrada para actualizar {}: {}", id, e.getMessage());
+        //     return ResponseEntity.notFound().build();
+        catch (IllegalArgumentException e) { // Captura si el servicio lanza IllegalArgumentException
             log.warn("Error al actualizar cancha {}: {}", id, e.getMessage());
-            // Si la cancha no existe, es un 404. Si hay problemas con los datos, es 400.
+            // Si el mensaje de error indica que no se encontró la cancha, se envía un 404
             if (e.getMessage().contains("no encontrada")) {
                 return ResponseEntity.notFound().build();
             }
-            return ResponseEntity.badRequest().body(null);
+            return ResponseEntity.badRequest().body(null); // Para otros errores de validación
         } catch (Exception e) {
             log.error("Error inesperado al actualizar cancha {}:", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
@@ -86,17 +92,15 @@ public class CanchaControlador {
     public ResponseEntity<Void> eliminarCancha(@PathVariable Long id) {
         log.info("DELETE /api/canchas/{} - Eliminando cancha.", id);
         try {
-            boolean eliminado = canchaServicio.eliminarCancha(id);
-            if (eliminado) {
-                return new ResponseEntity<>(HttpStatus.NO_CONTENT);
-            }
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
-        } catch (IllegalArgumentException e) {
+            // CORREGIDO: El método eliminarCancha en el servicio ahora es void y lanza excepción
+            canchaServicio.eliminarCancha(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT); // 204 No Content si la eliminación fue exitosa
+        } catch (IllegalArgumentException e) { // Captura si la cancha no fue encontrada
             log.warn("Error al eliminar cancha {}: {}", id, e.getMessage());
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND); // 404 Not Found
         } catch (Exception e) {
             log.error("Error inesperado al eliminar cancha {}:", id, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // 500 Internal Server Error
         }
     }
 }
