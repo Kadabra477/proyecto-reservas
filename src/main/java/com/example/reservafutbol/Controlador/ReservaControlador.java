@@ -2,7 +2,7 @@ package com.example.reservafutbol.Controlador;
 
 import com.example.reservafutbol.DTO.ReservaDetalleDTO;
 import com.example.reservafutbol.DTO.ReservaDTO;
-import com.example.reservafutbol.Modelo.Cancha;
+import com.example.reservafutbol.Modelo.Cancha; // Importar Cancha
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Servicio.CanchaServicio;
@@ -14,7 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.format.annotation.DateTimeFormat; // Importar para @DateTimeFormat
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,7 +29,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -44,7 +43,7 @@ public class ReservaControlador {
     private ReservaServicio reservaServicio;
 
     @Autowired
-    private CanchaServicio canchaServicio;
+    private CanchaServicio canchaServicio; // Asegúrate de que CanchaServicio está inyectado
 
     @Autowired
     private UsuarioServicio usuarioServicio;
@@ -52,7 +51,7 @@ public class ReservaControlador {
     @Autowired(required = false)
     private PdfGeneratorService pdfGeneratorService;
 
-    // --- OBTENER RESERVAS POR CANCHA (se mantiene, pero no es la de disponibilidad de slots) ---
+    // --- OBTENER RESERVAS POR CANCHA ESPECÍFICA (se mantiene para compatibilidad con el Admin Panel) ---
     @GetMapping("/cancha/{canchaId}")
     public ResponseEntity<List<Reserva>> obtenerReservasPorCancha(@PathVariable Long canchaId) {
         log.info("GET /api/reservas/cancha/{}", canchaId);
@@ -109,67 +108,78 @@ public class ReservaControlador {
     }
 
 
-    // --- CREAR RESERVA (MODIFICADO para nueva lógica) ---
+    // --- CREAR RESERVA (MODIFICADO: Ahora recibe tipoCancha y asigna una automáticamente) ---
     @PostMapping("/crear")
     public ResponseEntity<?> crearReservaConDTO(@RequestBody ReservaDTO dto, Authentication authentication) {
-        // ... (Tu código actual de validaciones y creación) ...
-        log.info("POST /api/reservas/crear por usuario {}", authentication != null ? authentication.getName() : "desconocido");
+        log.info("POST /api/reservas/crear por usuario {} para tipoCancha: {} en fecha/hora: {}",
+                authentication != null ? authentication.getName() : "desconocido",
+                dto.getTipoCancha(),
+                dto.getFecha() + " " + dto.getHora());
 
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Usuario no autenticado.");
         }
         String username = authentication.getName();
 
-        if (dto.getCanchaId() == null || dto.getFecha() == null || dto.getHora() == null || dto.getMetodoPago() == null || dto.getTelefono() == null || dto.getNombre() == null || dto.getApellido() == null) {
-            return ResponseEntity.badRequest().body("Faltan datos requeridos (canchaId, fecha, hora, metodoPago, nombre, apellido, telefono).");
+        // Validaciones de datos básicos del DTO
+        if (dto.getTipoCancha() == null || dto.getTipoCancha().isBlank() || dto.getFecha() == null || dto.getHora() == null ||
+                dto.getMetodoPago() == null || dto.getMetodoPago().isBlank() || dto.getTelefono() == null || dto.getTelefono().isBlank() ||
+                dto.getNombre() == null || dto.getNombre().isBlank() || dto.getApellido() == null || dto.getApellido().isBlank()) {
+            log.warn("Faltan datos requeridos en el DTO de reserva.");
+            return ResponseEntity.badRequest().body("Faltan datos requeridos (tipo de cancha, fecha, hora, método de pago, nombre, apellido, teléfono).");
         }
         if (dto.getDni() == null || !dto.getDni().matches("^\\d{7,8}$")) {
+            log.warn("Formato de DNI inválido: {}", dto.getDni());
             return ResponseEntity.badRequest().body("El DNI debe contener 7 u 8 dígitos numéricos.");
         }
 
-        Optional<Cancha> canchaOpt = canchaServicio.buscarPorId(dto.getCanchaId());
-        Optional<User> usuarioOpt = usuarioServicio.findByUsername(username);
+        // Buscar el usuario autenticado
+        User usuario = usuarioServicio.findByUsername(username)
+                .orElseThrow(() -> {
+                    log.error("Usuario autenticado '{}' no encontrado en la base de datos.", username);
+                    return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error de autenticación interno.");
+                });
 
-        if (canchaOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Cancha no encontrada.");
+        // Lógica para encontrar una CANCHA ESPECÍFICA disponible de ese TIPO en ese HORARIO
+        Optional<Cancha> canchaAsignadaOpt = reservaServicio.findFirstAvailableCancha(dto.getTipoCancha(), dto.getFecha(), dto.getHora());
+
+        if (canchaAsignadaOpt.isEmpty()) {
+            log.warn("No hay canchas de tipo '{}' disponibles para la fecha {} y hora {}. Todas ocupadas.", dto.getTipoCancha(), dto.getFecha(), dto.getHora());
+            // HttpStatus.CONFLICT es apropiado aquí si el slot se "agotó"
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("No hay canchas disponibles para el tipo y horario seleccionado. Por favor, elige otro.");
         }
-        if (usuarioOpt.isEmpty()) {
-            log.error("Usuario autenticado '{}' no encontrado en la base de datos.", username);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error de autenticación interno.");
-        }
 
-        Cancha cancha = canchaOpt.get();
-        User usuario = usuarioOpt.get();
+        Cancha canchaAsignada = canchaAsignadaOpt.get();
 
+        // Construir el objeto Reserva (ahora con la cancha asignada)
         Reserva nuevaReserva = new Reserva();
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
-        nuevaReserva.setCancha(cancha);
-        nuevaReserva.setCanchaNombre(cancha.getNombre());
-        nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora())); // Se construye aquí
+        nuevaReserva.setCancha(canchaAsignada); // ASIGNAR LA CANCHA ENCONTRADA
+        nuevaReserva.setCanchaNombre(canchaAsignada.getNombre()); // Asignar el nombre de la cancha asignada
+        nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
-
-        String nombreClienteCompleto = dto.getNombre().trim() + " " + dto.getApellido().trim();
-        nuevaReserva.setCliente(nombreClienteCompleto);
-
-        if (cancha.getPrecioPorHora() != null) {
-            nuevaReserva.setPrecio(BigDecimal.valueOf(cancha.getPrecioPorHora()));
+        nuevaReserva.setCliente(dto.getNombre().trim() + " " + dto.getApellido().trim());
+        // El precio se obtiene de la cancha asignada, asegurando que sea el correcto
+        if (canchaAsignada.getPrecioPorHora() != null) {
+            nuevaReserva.setPrecio(BigDecimal.valueOf(canchaAsignada.getPrecioPorHora()));
         } else {
-            log.error("El precio por hora para la cancha {} es null.", cancha.getId());
+            log.error("La cancha asignada {} (ID: {}) no tiene precio por hora definido.", canchaAsignada.getNombre(), canchaAsignada.getId());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno: Precio de la cancha no definido.");
         }
 
         try {
             // Llama al servicio para crear la reserva, que ahora incluye las validaciones de disponibilidad
-            Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
+            Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva); // El servicio ahora sólo guarda la reserva
+            log.info("Reserva creada con ID: {} para cancha {} (tipo: {})", reservaGuardada.getId(), canchaAsignada.getNombre(), dto.getTipoCancha());
             return ResponseEntity.status(HttpStatus.CREATED).body(new ReservaDetalleDTO(reservaGuardada));
         } catch (IllegalArgumentException e) {
-            log.warn("Error al crear reserva: {}", e.getMessage());
+            log.warn("Error al crear reserva (validación de slot/cancha): {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (IllegalStateException e) {
-            log.warn("Conflicto de estado al crear reserva: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage()); // 409 Conflict para disponibilidad
+            log.warn("Conflicto de estado/lógica al crear reserva: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         } catch (Exception e) {
             log.error("Error inesperado al guardar reserva:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al guardar la reserva.");
@@ -185,7 +195,7 @@ public class ReservaControlador {
             return ResponseEntity.ok(new ReservaDetalleDTO(reservaConfirmada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
-        } catch (IllegalStateException e) { // Nuevo: para manejar estados que no permiten confirmación
+        } catch (IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (Exception e) {
             log.error("Error al confirmar reserva {}: {}", id, e.getMessage(), e);
@@ -242,7 +252,7 @@ public class ReservaControlador {
         }
     }
 
-    // NUEVO ENDPOINT: Generar PDF del comprobante de reserva
+    // NUEVO ENDPOINT: Generar PDF del comprobante de reserva (se mantiene)
     @GetMapping(value = "/{reservaId}/pdf-comprobante", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<InputStreamResource> generarComprobantePdf(@PathVariable Long reservaId) {
         log.info("GET /api/reservas/{}/pdf-comprobante", reservaId);
@@ -277,7 +287,7 @@ public class ReservaControlador {
         }
     }
 
-    // NUEVO ENDPOINT: Obtener slots de tiempo disponibles para una cancha en una fecha específica
+    // Endpoint para obtener slots disponibles para una cancha específica (se mantiene para AdminPanel o si se usa)
     @GetMapping("/{canchaId}/slots-disponibles")
     public ResponseEntity<List<String>> getAvailableTimeSlots(
             @PathVariable Long canchaId,
@@ -288,6 +298,22 @@ public class ReservaControlador {
             return ResponseEntity.ok(availableSlots);
         } catch (Exception e) {
             log.error("Error al obtener slots disponibles para cancha {} en {}: {}", canchaId, fecha, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    // NUEVO ENDPOINT: Obtener cantidad de canchas disponibles por tipo y horario
+    @GetMapping("/disponibilidad-por-tipo")
+    public ResponseEntity<Integer> getAvailableCanchasCount(
+            @RequestParam String tipoCancha,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fecha,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime hora) {
+        log.info("GET /api/reservas/disponibilidad-por-tipo?tipoCancha={}&fecha={}&hora={}", tipoCancha, fecha, hora);
+        try {
+            int availableCount = reservaServicio.countAvailableCanchasForSlot(tipoCancha, fecha, hora);
+            return ResponseEntity.ok(availableCount);
+        } catch (Exception e) {
+            log.error("Error al obtener cantidad de canchas disponibles para tipo '{}' en {} a {}: {}", tipoCancha, fecha, hora, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

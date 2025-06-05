@@ -2,8 +2,11 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Cancha;
 import com.example.reservafutbol.Repositorio.CanchaRepositorio;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory; // Asegúrate de importar LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,51 +14,60 @@ import java.util.Optional;
 @Service
 public class CanchaServicio {
 
+    private static final Logger log = LoggerFactory.getLogger(CanchaServicio.class); // Declaración del logger
+
     @Autowired
     private CanchaRepositorio canchaRepositorio;
 
-    // Obtener todas las canchas
-    public List<Cancha> listarCanchas() {
+    // Obtener todas las canchas (útil para el listado general y para obtener tipos únicos)
+    public List<Cancha> listarTodasCanchas() {
+        log.info("Listando todas las canchas.");
         return canchaRepositorio.findAll();
     }
 
-    // Crear una nueva cancha (MODIFICADO)
+    public Optional<Cancha> buscarPorId(Long id) {
+        log.info("Buscando cancha por ID: {}", id);
+        return canchaRepositorio.findById(id);
+    }
+
+    // NUEVO MÉTODO: Listar canchas por tipo y que estén generalmente disponibles
+    @Transactional(readOnly = true) // Es una operación de solo lectura
+    public List<Cancha> listarCanchasPorTipoYDisponibilidad(String tipoCancha) {
+        log.info("Listando canchas de tipo '{}' y disponibles.", tipoCancha);
+        return canchaRepositorio.findByTipoCanchaAndDisponibleTrue(tipoCancha);
+    }
+
+    @Transactional
     public Cancha crearCancha(Cancha cancha) {
+        log.info("Creando cancha: {}", cancha.getNombre());
         if (cancha.getNombre() == null || cancha.getNombre().isEmpty()) {
             throw new IllegalArgumentException("El nombre de la cancha no puede estar vacío");
         }
-        // NUEVOS CAMPOS: Validar o asignar valores por defecto
         if (cancha.getTipoCancha() == null || cancha.getTipoCancha().isEmpty()) {
             throw new IllegalArgumentException("El tipo de cancha es obligatorio.");
         }
         if (cancha.getSuperficie() == null || cancha.getSuperficie().isEmpty()) {
             throw new IllegalArgumentException("La superficie de la cancha es obligatoria.");
         }
-        // Los booleanos iluminacion y techo se manejan por defecto si no se envían.
-        // Asegúrate que si el frontend envía `null`, lo manejes aquí si deben ser `false`.
-        if (cancha.getIluminacion() == null) {
+        if (cancha.getIluminacion() == null) { // Si viene null, establecer a false
             cancha.setIluminacion(false);
         }
-        if (cancha.getTecho() == null) {
+        if (cancha.getTecho() == null) { // Si viene null, establecer a false
             cancha.setTecho(false);
         }
-        if (cancha.getDisponible() == null) {
-            cancha.setDisponible(true); // Asume disponible por defecto al crear
+        if (cancha.getDisponible() == null) { // Si viene null, asumir disponible por defecto al crear
+            cancha.setDisponible(true);
         }
 
         return canchaRepositorio.save(cancha);
     }
 
-    public Optional<Cancha> buscarPorId(Long id) {
-        return canchaRepositorio.findById(id);
-    }
-
-    // Actualizar una cancha existente (MODIFICADO)
+    @Transactional
     public Cancha actualizarCancha(Long id, Cancha canchaDetails) {
+        log.info("Actualizando cancha con ID: {}", id);
         Cancha canchaExistente = canchaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Cancha no encontrada con ID: " + id));
 
-        // Validaciones de campos obligatorios
         if (canchaDetails.getNombre() == null || canchaDetails.getNombre().isEmpty()) {
             throw new IllegalArgumentException("El nombre de la cancha no puede estar vacío");
         }
@@ -75,7 +87,6 @@ public class CanchaServicio {
         canchaExistente.setUbicacion(canchaDetails.getUbicacion());
         canchaExistente.setPrecioPorHora(canchaDetails.getPrecioPorHora());
         canchaExistente.setDisponible(canchaDetails.getDisponible());
-        // Nuevos campos
         canchaExistente.setTipoCancha(canchaDetails.getTipoCancha());
         canchaExistente.setSuperficie(canchaDetails.getSuperficie());
         canchaExistente.setIluminacion(canchaDetails.getIluminacion() != null ? canchaDetails.getIluminacion() : false);
@@ -84,12 +95,14 @@ public class CanchaServicio {
         return canchaRepositorio.save(canchaExistente);
     }
 
-    public boolean eliminarCancha(Long id) {
+    @Transactional
+    public void eliminarCancha(Long id) { // Cambiado a void para consistencia con tu uso previo
+        log.info("Eliminando cancha con ID: {}", id);
         if (canchaRepositorio.existsById(id)) {
             canchaRepositorio.deleteById(id);
-            return true;
+            log.info("Cancha con ID {} eliminada exitosamente.", id);
         } else {
-            throw new IllegalArgumentException("La cancha no existe");
+            throw new IllegalArgumentException("Cancha no encontrada con ID: " + id);
         }
     }
 }
