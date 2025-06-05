@@ -30,20 +30,18 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
     @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
     Optional<Reserva> findById(Long id);
 
-    // CONSULTA CORREGIDA: Encontrar reservas que se solapan con un nuevo slot
-    // Utiliza FUNCTION('TIMESTAMPADD', ...) para sumar minutos a LocalDateTime en JPQL
-    // La condición de solapamiento es: (inicio_existente < fin_nuevo) AND (inicio_nuevo < fin_existente)
+    // CONSULTA CORREGIDA FINAL: Encontrar reservas que se solapan con un nuevo slot
+    // Cambiado 'MINUTE' (con comillas) a MINUTE (sin comillas) para el TIMESTAMPADD
     @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
             "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
-            "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', 'MINUTE', 60, r.fechaHora) > :startTime)")
+            "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', MINUTE, 60, r.fechaHora) > :startTime)")
     List<Reserva> findConflictingReservations(
             @Param("canchaId") Long canchaId,
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
     );
 
-    // CONSULTA CORREGIDA: Obtener todas las reservas (que bloquean slots) de una cancha en un día específico.
-    // Aseguramos que los nombres de los parámetros en la query coincidan con la firma del método.
+    // Esta consulta ya estaba correcta
     @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
             "FUNCTION('DATE', r.fechaHora) = :fecha AND " +
             "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp')")
