@@ -4,10 +4,14 @@ import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.time.LocalDate; // Importar LocalDate
 import java.util.List;
-import java.util.Optional; // Importar Optional
+import java.util.Optional;
 
 @Repository
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
@@ -22,9 +26,28 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
     @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
     List<Reserva> findAll();
 
-    // OPCIONAL: Añadir EntityGraph al findById si lo usas en otros lugares y necesitas el usuario/cancha.
-    // Esto asegura que la Reserva traída por ID también tenga el User y Cancha cargados.
     @Override
     @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
     Optional<Reserva> findById(Long id);
+
+    @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
+            "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
+            "((r.fechaHora <= :endTime AND r.fechaHora >= :startTime) OR " +
+            " (r.fechaHora <= :startTime AND :endTime <= r.fechaHora + 1))")
+    List<Reserva> findConflictingReservations(
+            @Param("canchaId") Long canchaId,
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
+
+    // NUEVA CONSULTA: Para obtener todas las reservas (confirmadas o no) de una cancha en un día específico.
+    // Esto se usa para mostrar los horarios ocupados en el frontend.
+    // Los parámetros son: (Long canchaId, LocalDate fecha)
+    @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
+            "FUNCTION('DATE', r.fechaHora) = :fecha AND " +
+            "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp')") // Solo slots que bloquean la reserva
+    List<Reserva> findOccupiedSlotsByCanchaAndDate(
+            @Param("canchaId") Long canchaId, // Parámetro 1
+            @Param("fecha") LocalDate fecha   // Parámetro 2
+    );
 }

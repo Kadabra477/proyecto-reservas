@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.format.annotation.DateTimeFormat; // Importar para @DateTimeFormat
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -48,10 +49,10 @@ public class ReservaControlador {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    @Autowired(required = false) // Hacerlo opcional si no siempre está configurado (ej. para tests)
+    @Autowired(required = false)
     private PdfGeneratorService pdfGeneratorService;
 
-    // --- OBTENER RESERVAS POR CANCHA ---
+    // --- OBTENER RESERVAS POR CANCHA (se mantiene, pero no es la de disponibilidad de slots) ---
     @GetMapping("/cancha/{canchaId}")
     public ResponseEntity<List<Reserva>> obtenerReservasPorCancha(@PathVariable Long canchaId) {
         log.info("GET /api/reservas/cancha/{}", canchaId);
@@ -63,10 +64,8 @@ public class ReservaControlador {
     }
 
     // --- OBTENER TODAS (Admin) ---
-    // Usar @PreAuthorize en SecurityConfig o directamente aquí para rol ADMIN
     @GetMapping("/admin/todas")
-    // @PreAuthorize("hasRole('ADMIN')") // Si prefieres la seguridad directamente en el controlador
-    public ResponseEntity<List<ReservaDetalleDTO>> obtenerTodas() { // Retornar DTO para consistencia
+    public ResponseEntity<List<ReservaDetalleDTO>> obtenerTodas() {
         log.info("GET /api/reservas/admin/todas");
         List<Reserva> reservas = reservaServicio.listarTodas();
         List<ReservaDetalleDTO> reservasDTO = reservas.stream()
@@ -77,10 +76,10 @@ public class ReservaControlador {
 
     // --- OBTENER RESERVA POR ID ---
     @GetMapping("/{id}")
-    public ResponseEntity<ReservaDetalleDTO> obtenerPorId(@PathVariable Long id) { // Retornar DTO
+    public ResponseEntity<ReservaDetalleDTO> obtenerPorId(@PathVariable Long id) {
         log.info("GET /api/reservas/{}", id);
         return reservaServicio.obtenerReserva(id)
-                .map(ReservaDetalleDTO::new) // Convertir a DTO
+                .map(ReservaDetalleDTO::new)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -110,9 +109,10 @@ public class ReservaControlador {
     }
 
 
-    // --- CREAR RESERVA (MODIFICADO) ---
+    // --- CREAR RESERVA (MODIFICADO para nueva lógica) ---
     @PostMapping("/crear")
     public ResponseEntity<?> crearReservaConDTO(@RequestBody ReservaDTO dto, Authentication authentication) {
+        // ... (Tu código actual de validaciones y creación) ...
         log.info("POST /api/reservas/crear por usuario {}", authentication != null ? authentication.getName() : "desconocido");
 
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -123,7 +123,6 @@ public class ReservaControlador {
         if (dto.getCanchaId() == null || dto.getFecha() == null || dto.getHora() == null || dto.getMetodoPago() == null || dto.getTelefono() == null || dto.getNombre() == null || dto.getApellido() == null) {
             return ResponseEntity.badRequest().body("Faltan datos requeridos (canchaId, fecha, hora, metodoPago, nombre, apellido, telefono).");
         }
-        // Validar DNI si es necesario
         if (dto.getDni() == null || !dto.getDni().matches("^\\d{7,8}$")) {
             return ResponseEntity.badRequest().body("El DNI debe contener 7 u 8 dígitos numéricos.");
         }
@@ -142,35 +141,18 @@ public class ReservaControlador {
         Cancha cancha = canchaOpt.get();
         User usuario = usuarioOpt.get();
 
-        // Validar si la cancha está disponible
-        if (Boolean.FALSE.equals(cancha.getDisponible())) {
-            log.warn("Intento de reservar cancha no disponible: {}", cancha.getNombre());
-            return ResponseEntity.badRequest().body("Esta cancha no está disponible para reservas en este momento.");
-        }
-
-        LocalDateTime fechaHoraSolicitada = LocalDateTime.of(dto.getFecha(), dto.getHora());
-        LocalDateTime now = LocalDateTime.now();
-
-        // Validación de fecha y hora más robusta
-        if (fechaHoraSolicitada.isBefore(now)) {
-            log.warn("Intento de crear reserva para fecha/hora pasada. Solicitada: {}, Ahora: {}", fechaHoraSolicitada, now);
-            return ResponseEntity.badRequest().body("No se pueden crear reservas para fechas u horas pasadas.");
-        }
-
         Reserva nuevaReserva = new Reserva();
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setCancha(cancha);
-        nuevaReserva.setCanchaNombre(cancha.getNombre()); // Asignar el nombre de la cancha
-        nuevaReserva.setFechaHora(fechaHoraSolicitada);
+        nuevaReserva.setCanchaNombre(cancha.getNombre());
+        nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora())); // Se construye aquí
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
 
-        // Combina nombre y apellido para el campo 'cliente'
         String nombreClienteCompleto = dto.getNombre().trim() + " " + dto.getApellido().trim();
         nuevaReserva.setCliente(nombreClienteCompleto);
 
-        // Asigna el precio total desde la cancha
         if (cancha.getPrecioPorHora() != null) {
             nuevaReserva.setPrecio(BigDecimal.valueOf(cancha.getPrecioPorHora()));
         } else {
@@ -179,24 +161,15 @@ public class ReservaControlador {
         }
 
         try {
-            // La lógica de estado inicial (confirmada/pagada) antes de guardar
-            if ("efectivo".equalsIgnoreCase(dto.getMetodoPago())) {
-                nuevaReserva.setConfirmada(false); // Por defecto efectivo no está confirmado por admin aún
-                nuevaReserva.setPagada(false);
-                nuevaReserva.setEstado("pendiente"); // Estado inicial pendiente de confirmación (si admin debe confirmarla)
-            } else { // Para Mercado Pago
-                nuevaReserva.setConfirmada(false); // MP siempre espera confirmación externa del pago
-                nuevaReserva.setPagada(false);
-                nuevaReserva.setEstado("pendiente_pago_mp");
-            }
-            // La lógica @PrePersist en la entidad Reserva ajustará el campo 'estado' si es necesario.
-
+            // Llama al servicio para crear la reserva, que ahora incluye las validaciones de disponibilidad
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
-            log.info("Reserva creada con ID: {}", reservaGuardada.getId());
             return ResponseEntity.status(HttpStatus.CREATED).body(new ReservaDetalleDTO(reservaGuardada));
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear reserva: {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (IllegalStateException e) {
+            log.warn("Conflicto de estado al crear reserva: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage()); // 409 Conflict para disponibilidad
         } catch (Exception e) {
             log.error("Error inesperado al guardar reserva:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al guardar la reserva.");
@@ -212,6 +185,8 @@ public class ReservaControlador {
             return ResponseEntity.ok(new ReservaDetalleDTO(reservaConfirmada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+        } catch (IllegalStateException e) { // Nuevo: para manejar estados que no permiten confirmación
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (Exception e) {
             log.error("Error al confirmar reserva {}: {}", id, e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al confirmar reserva", e);
@@ -299,6 +274,21 @@ public class ReservaControlador {
         } catch (Exception e) {
             log.error("Error inesperado al generar PDF para reserva ID {}: {}", reservaId, e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error inesperado al generar el comprobante", e);
+        }
+    }
+
+    // NUEVO ENDPOINT: Obtener slots de tiempo disponibles para una cancha en una fecha específica
+    @GetMapping("/{canchaId}/slots-disponibles")
+    public ResponseEntity<List<String>> getAvailableTimeSlots(
+            @PathVariable Long canchaId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fecha) {
+        log.info("GET /api/reservas/{}/slots-disponibles?fecha={}", canchaId, fecha);
+        try {
+            List<String> availableSlots = reservaServicio.getAvailableTimeSlots(canchaId, fecha);
+            return ResponseEntity.ok(availableSlots);
+        } catch (Exception e) {
+            log.error("Error al obtener slots disponibles para cancha {} en {}: {}", canchaId, fecha, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }

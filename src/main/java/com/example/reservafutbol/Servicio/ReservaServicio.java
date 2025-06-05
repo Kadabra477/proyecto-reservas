@@ -1,19 +1,25 @@
 package com.example.reservafutbol.Servicio;
 
+import com.example.reservafutbol.Modelo.Cancha;
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ReservaRepositorio;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
-import com.example.reservafutbol.payload.response.EstadisticasResponse; // Importa el nuevo DTO
+import com.example.reservafutbol.payload.response.EstadisticasResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalTime;   // Necesario para extraer la hora
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -22,17 +28,28 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 public class ReservaServicio {
 
-    private static final Logger log = LoggerFactory.getLogger(ReservaServicio.class);
+    private static final Logger log = LoggerFactory.getLogger(ReservaServicio.class); // Declaración correcta del logger
 
     @Autowired
     private ReservaRepositorio reservaRepositorio;
 
     @Autowired
     private UsuarioRepositorio usuarioRepositorio;
+
+    @Autowired
+    private EmailService emailService;
+
+    @Value("${admin.email}")
+    private String adminEmail;
+
+    private static final int SLOT_DURATION_MINUTES = 60;
+    private static final LocalTime OPEN_TIME = LocalTime.of(8, 0);
+    private static final LocalTime CLOSE_TIME = LocalTime.of(22, 0);
 
     public List<Reserva> listarReservas(Long canchaId) {
         log.info("Buscando reservas para cancha ID: {}", canchaId);
@@ -53,7 +70,6 @@ public class ReservaServicio {
         if (reserva.getCancha() == null) {
             throw new IllegalArgumentException("La cancha es obligatoria.");
         }
-        // Asignar el nombre de la cancha al campo directo de la reserva
         if (reserva.getCancha().getNombre() != null) {
             reserva.setCanchaNombre(reserva.getCancha().getNombre());
         } else {
@@ -70,17 +86,52 @@ public class ReservaServicio {
             throw new IllegalArgumentException("El método de pago es obligatorio.");
         }
 
-        reserva.setConfirmada(false);
-        reserva.setPagada(false);
-        reserva.setEstado("pendiente"); // Estado inicial antes de la lógica @PrePersist
-        reserva.setMetodoPago(reserva.getMetodoPago());
+        if (Boolean.FALSE.equals(reserva.getCancha().getDisponible())) {
+            throw new IllegalArgumentException("Esta cancha no está disponible para reservas en este momento.");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (reserva.getFechaHora().isBefore(now)) {
+            throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
+        }
+
+        // --- NUEVA VALIDACIÓN DE DISPONIBILIDAD DE SLOT (Anti-doble reserva) ---
+        LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
+
+        List<Reserva> conflictos = reservaRepositorio.findConflictingReservations(
+                reserva.getCancha().getId(),
+                reserva.getFechaHora(),
+                slotEndTime
+        );
+
+        if (!conflictos.isEmpty()) {
+            throw new IllegalArgumentException("El horario seleccionado ya está reservado o se solapa con otra reserva. Por favor, elige otro horario.");
+        }
+
+        // --- ASIGNACIÓN DE ESTADO INICIAL ---
+        if ("efectivo".equalsIgnoreCase(reserva.getMetodoPago())) {
+            reserva.setConfirmada(true);
+            reserva.setPagada(false);
+            reserva.setEstado("pendiente_pago_efectivo");
+        } else {
+            reserva.setConfirmada(true);
+            reserva.setPagada(false);
+            reserva.setEstado("pendiente_pago_mp");
+        }
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
 
-        // La lógica @PrePersist/@PreUpdate en la entidad Reserva se encarga de ajustar 'estado'
-
         Reserva reservaGuardada = reservaRepositorio.save(reserva);
         log.info("Reserva creada con ID: {}", reservaGuardada.getId());
+
+        // --- NOTIFICACIÓN AL DUEÑO ---
+        try {
+            emailService.sendNewReservationNotification(reservaGuardada, adminEmail);
+            log.info("Notificación de nueva reserva enviada al administrador.");
+        } catch (Exception e) {
+            log.error("Error al enviar notificación de nueva reserva al administrador: {}", e.getMessage(), e);
+        }
+
         return reservaGuardada;
     }
 
@@ -96,15 +147,29 @@ public class ReservaServicio {
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
 
-        if (Boolean.TRUE.equals(r.getConfirmada())) {
-            log.warn("Reserva con ID: {} ya estaba confirmada.", id);
-            return r;
-        } else {
+        if ("pendiente".equalsIgnoreCase(r.getEstado()) || "pendiente_pago_mp".equalsIgnoreCase(r.getEstado())) { // Permite confirmar pendientes
             r.setConfirmada(true);
-            // La lógica @PreUpdate en la entidad Reserva se encarga de ajustar 'estado'
-            Reserva reservaGuardada = reservaRepositorio.save(r);
+            // Si es MP y ya está pagada (por webhook), no sobrescribir a 'confirmada', dejar 'pagada'.
+            // Si es efectivo pendiente, cambiar a 'confirmada_efectivo'.
+            if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado())) {
+                // Si estaba pendiente de pago MP y el admin la confirma, es una confirmación manual.
+                // Podríamos considerar un estado intermedio o dejar que el webhook la marque como pagada.
+                // Para este flujo simple, si el admin la confirma manualmente, la dejamos en 'confirmada'.
+                // Lo ideal sería que el webhook de MP cambie directamente a 'pagada'.
+                r.setEstado("confirmada"); // Si el admin la confirma antes que MP, se convierte en 'confirmada'
+            } else if ("pendiente".equalsIgnoreCase(r.getEstado())) {
+                // Este estado 'pendiente' general se usaba si no se especificaba método de pago inicialmente.
+                // Ahora con los métodos de pago, este caso debería ser menos común.
+                r.setEstado("confirmada");
+            }
+            // Si el estado es 'pendiente_pago_efectivo', ya se marcó confirmada al crear, no hace falta aquí.
+
+            Reserva reservaConfirmada = reservaRepositorio.save(r);
             log.info("Reserva con ID: {} confirmada exitosamente.", id);
-            return reservaGuardada;
+            return reservaConfirmada;
+        } else {
+            log.warn("No se pudo confirmar la reserva con ID: {} porque su estado actual es '{}'.", id, r.getEstado());
+            throw new IllegalStateException("La reserva no puede ser confirmada en su estado actual.");
         }
     }
 
@@ -143,7 +208,7 @@ public class ReservaServicio {
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
-        // La lógica @PreUpdate en la entidad Reserva se encarga de ajustar 'estado'
+        // El estado se actualizará vía @PreUpdate
         return reservaRepositorio.save(reserva);
     }
 
@@ -175,49 +240,77 @@ public class ReservaServicio {
         return reservaGuardada;
     }
 
-    // --- NUEVO MÉTODO PARA ESTADÍSTICAS ---
-    @Transactional(readOnly = true) // Es una operación de solo lectura
+    // --- NUEVO MÉTODO: Obtener Slots de Tiempo Disponibles para una Cancha y Fecha ---
+    @Transactional(readOnly = true)
+    public List<String> getAvailableTimeSlots(Long canchaId, LocalDate fecha) {
+        log.info("Consultando slots disponibles para cancha ID: {} en fecha: {}", canchaId, fecha);
+
+        List<String> allPossibleSlots = new ArrayList<>();
+        LocalTime currentTime = OPEN_TIME;
+        while (currentTime.isBefore(CLOSE_TIME) || currentTime.equals(CLOSE_TIME)) {
+            allPossibleSlots.add(currentTime.toString());
+            currentTime = currentTime.plusMinutes(SLOT_DURATION_MINUTES);
+            if (currentTime.isAfter(CLOSE_TIME) && !currentTime.minusMinutes(SLOT_DURATION_MINUTES).equals(CLOSE_TIME)) {
+                break;
+            }
+        }
+
+        // CORRECCIÓN: Orden de los parámetros en la llamada al repositorio
+        List<Reserva> occupiedReservations = reservaRepositorio.findOccupiedSlotsByCanchaAndDate(canchaId, fecha);
+
+        Set<String> occupiedSlots = occupiedReservations.stream()
+                .map(reserva -> reserva.getFechaHora().toLocalTime().truncatedTo(ChronoUnit.HOURS).toString())
+                .collect(Collectors.toSet());
+
+        List<String> availableSlots = allPossibleSlots.stream()
+                .filter(slot -> !occupiedSlots.contains(slot))
+                .collect(Collectors.toList());
+
+        // Filtrar slots pasados si la fecha es hoy
+        if (fecha.isEqual(LocalDate.now())) {
+            LocalTime nowTime = LocalTime.now().truncatedTo(ChronoUnit.MINUTES);
+            availableSlots = availableSlots.stream()
+                    .filter(slot -> LocalTime.parse(slot).isAfter(nowTime))
+                    .collect(Collectors.toList());
+        }
+
+        log.debug("Slots disponibles para cancha {} en {}: {}", canchaId, fecha, availableSlots);
+        return availableSlots;
+    }
+
+    @Transactional(readOnly = true)
     public EstadisticasResponse calcularEstadisticas() {
         log.info("Calculando estadísticas del complejo...");
         List<Reserva> todasLasReservas = reservaRepositorio.findAll();
 
-        // 1. Ingresos Totales Confirmados y Pagados
         BigDecimal ingresosTotalesConfirmados = todasLasReservas.stream()
-                .filter(Reserva::getConfirmada) // Filtra las que el admin confirmó
-                .filter(Reserva::getPagada)     // Filtra las que están marcadas como pagadas
-                .map(Reserva::getPrecio) // Asegúrate de usar getPrecio() y no getPrecioTotal si ese es el nombre del campo
+                .filter(reserva -> "pagada".equalsIgnoreCase(reserva.getEstado()))
+                .map(Reserva::getPrecio)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         log.debug("Ingresos totales confirmados y pagados: {}", ingresosTotalesConfirmados);
 
 
-        // 2. Total de Reservas por Estado (Confirmadas, Pendientes, Canceladas)
         Long totalReservasConfirmadas = todasLasReservas.stream()
-                .filter(Reserva::getConfirmada)
+                .filter(reserva -> reserva.getEstado().startsWith("confirmada") || "pagada".equalsIgnoreCase(reserva.getEstado()))
                 .count();
 
-        // Las "pendientes" son las que no están confirmadas por el admin
         Long totalReservasPendientes = todasLasReservas.stream()
-                .filter(reserva -> !reserva.getConfirmada())
+                .filter(reserva -> "pendiente".equalsIgnoreCase(reserva.getEstado()) || "pendiente_pago_mp".equalsIgnoreCase(reserva.getEstado()))
                 .count();
 
-        // Asumimos que no hay un campo explícito 'cancelada', sino un estado.
-        // Si tu modelo lo soporta, podrías filtrar por estado="cancelada".
         Long totalReservasCanceladas = todasLasReservas.stream()
-                .filter(reserva -> "cancelada".equalsIgnoreCase(reserva.getEstado())) // Asumiendo que "cancelada" es un valor del campo 'estado'
+                .filter(reserva -> "cancelada".equalsIgnoreCase(reserva.getEstado()) || "rechazada_pago_mp".equalsIgnoreCase(reserva.getEstado()))
                 .count();
         log.debug("Reservas: Confirmadas={}, Pendientes={}, Canceladas={}",
                 totalReservasConfirmadas, totalReservasPendientes, totalReservasCanceladas);
 
 
-        // 3. Reservas por Cancha (Nombre de la cancha -> Cantidad)
         Map<String, Long> reservasPorCancha = todasLasReservas.stream()
                 .collect(Collectors.groupingBy(Reserva::getCanchaNombre, Collectors.counting()));
         log.debug("Reservas por cancha: {}", reservasPorCancha);
 
-        // 4. Horarios Pico (Hora de inicio -> Cantidad de reservas)
         Map<String, Long> horariosPico = todasLasReservas.stream()
-                .map(reserva -> reserva.getFechaHora().toLocalTime()) // Obtiene LocalTime de fechaHora
-                // Agrupamos por la hora completa (ej. "15:00:00")
+                .map(reserva -> reserva.getFechaHora().toLocalTime().truncatedTo(ChronoUnit.HOURS))
                 .collect(Collectors.groupingBy(LocalTime::toString, Collectors.counting()));
         log.debug("Horarios pico: {}", horariosPico);
 
@@ -226,7 +319,7 @@ public class ReservaServicio {
                 ingresosTotalesConfirmados,
                 totalReservasConfirmadas,
                 totalReservasPendientes,
-                totalReservasCanceladas, // Asegúrate de que esta cuenta sea correcta si manejas 'cancelada'
+                totalReservasCanceladas,
                 reservasPorCancha,
                 horariosPico
         );
