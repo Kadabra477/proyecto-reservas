@@ -149,4 +149,35 @@ public class UsuarioServicio implements UserDetailsService {
         usuarioRepositorio.save(user);
         log.info("Contraseña actualizada exitosamente para usuario {}", user.getUsername());
     }
+    @Transactional
+    public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
+        log.info("Actualizando perfil del usuario: {}", user.getUsername());
+
+        if (nombreCompleto != null) {
+            user.setNombreCompleto(nombreCompleto);
+        }
+        if (ubicacion != null) {
+            user.setUbicacion(ubicacion);
+        }
+        if (edad != null) {
+            user.setEdad(edad);
+        }
+        if (bio != null) {
+            user.setBio(bio);
+        }
+
+        usuarioRepositorio.save(user);
+        log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
+    }
+    @Transactional
+    public void updateProfilePictureUrl(User user, String url) {
+        log.info("Actualizando foto de perfil para usuario: {}", user.getUsername());
+
+        user.setProfilePictureUrl(url);
+        usuarioRepositorio.save(user);
+
+        log.info("Foto de perfil actualizada para usuario: {}", user.getUsername());
+    }
+
+
 }
