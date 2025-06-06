@@ -1,74 +1,106 @@
 package com.example.reservafutbol.Configuracion;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.ExpiredJwtException; // Importar
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.MalformedJwtException; // Importar
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.SignatureException; // Importar
-import io.jsonwebtoken.UnsupportedJwtException; // Importar
+import com.example.reservafutbol.Modelo.User;
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Component
 public class JWTUtil {
 
-    private final String secretKey = "secret";
+    private static final Logger log = LoggerFactory.getLogger(JWTUtil.class);
 
-    public String generateTokenFromEmail(String email) {
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
+    @Value("${jwt.expiration.ms}")
+    private int jwtExpirationMs;
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String generateJwtToken(Authentication authentication) {
+        User userPrincipal = (User) authentication.getPrincipal();
+
+        return Jwts.builder()
+                .setSubject(userPrincipal.getUsername())
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .claim("roles", userPrincipal.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .collect(Collectors.toList()))
+                .claim("nombreCompleto", userPrincipal.getNombreCompleto())
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String generateTokenFromEmail(String email, String nombreCompleto, String role) {
         return Jwts.builder()
                 .setSubject(email)
-                .claim("role", "USER") // Rol por defecto
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60)) // 1 hora
-                .signWith(SignatureAlgorithm.HS256, secretKey)
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .claim("roles", Collections.singletonList("ROLE_" + role))
+                .claim("nombreCompleto", nombreCompleto)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    // ✅ Generar token con username + rol
-    public String generateToken(String username, String role) {
-        return Jwts.builder()
-                .setSubject(username)
-                .claim("role", role)  // 👈 importante
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60)) // 1 hora
-                .signWith(SignatureAlgorithm.HS256, secretKey)
-                .compact();
+    public String getUserNameFromJwtToken(String token) {
+        return parseClaims(token).getSubject();
     }
 
-    public boolean isTokenValid(String token) {
-        try {
-            Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token);
-            // Si llega aquí, es válido
-            System.out.println(">>> JWT VÁLIDO para token que empieza con: " + (token != null && token.length() > 10 ? token.substring(0, 10) : "N/A")); // Log de éxito
-            return true;
-        } catch (ExpiredJwtException e) {
-            System.err.println(">>> ERROR al validar token: Token expirado. Mensaje=" + e.getMessage());
-            // No se necesita printStackTrace completo para errores de expiración, son comunes.
-            return false;
-        } catch (UnsupportedJwtException | MalformedJwtException | SignatureException | IllegalArgumentException e) {
-            // Loguear el error específico para otros tipos de fallos en el token
-            System.err.println(">>> ERROR al validar token: Tipo=" + e.getClass().getName() + ", Mensaje=" + e.getMessage());
-            // Para estos tipos de errores, un printStackTrace completo puede ser útil en desarrollo.
-            // Considera usar un logger (slf4j) y configurar el nivel de log.
-            // e.printStackTrace(); // <-- Quitar en producción para no llenar logs
-            return false;
+    public String getUserRoleFromJwtToken(String token) {
+        Claims claims = parseClaims(token);
+        List<String> roles = claims.get("roles", List.class);
+        if (roles != null && !roles.isEmpty()) {
+            String fullRole = roles.get(0);
+            return fullRole.replace("ROLE_", "");
         }
+        return null;
     }
 
-    // ✅ Extraer el nombre de usuario del token
-    public String extractUsername(String token) {
-        return getClaims(token).getSubject();
+    public String getNombreCompletoFromJwtToken(String token) {
+        Claims claims = parseClaims(token);
+        return claims.get("nombreCompleto", String.class);
     }
 
-    // ✅ Extraer el rol del token
-    public String extractRole(String token) {
-        return getClaims(token).get("role", String.class);
+    public boolean validateJwtToken(String authToken) {
+        try {
+            parseClaims(authToken);
+            return true;
+        } catch (MalformedJwtException e) {
+            log.error("Token JWT inválido: {}", e.getMessage());
+        } catch (ExpiredJwtException e) {
+            log.error("Token JWT expirado: {}", e.getMessage());
+        } catch (UnsupportedJwtException e) {
+            log.error("Token JWT no soportado: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            log.error("Cadena de claims JWT vacía: {}", e.getMessage());
+        } catch (SignatureException e) {
+            log.error("Firma JWT inválida: {}", e.getMessage());
+        }
+        return false;
     }
 
-    // ✅ Método interno para obtener claims
-    private Claims getClaims(String token) {
-        return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody();
+    // ✅ Método auxiliar para evitar repetición y usar parser() de JJWT 0.12.5
+    private Claims parseClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

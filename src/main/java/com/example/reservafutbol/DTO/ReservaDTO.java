@@ -1,25 +1,26 @@
 package com.example.reservafutbol.DTO;
 
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.Future; // Puede que ya no necesitemos @Future si validamos en servicio
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
+import lombok.Data; // Asegúrate de importar Lombok Data
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List; // Necesario si manejas jugadores/equipos
+import java.util.Set; // Necesario si manejas jugadores/equipos
 
-@Data
+@Data // Proporciona getters, setters, equals, hashCode, toString
 public class ReservaDTO {
 
-    // ANTES: @NotNull(message = "El ID de la cancha es obligatorio")
-    // ANTES: private Long canchaId;
-    // AHORA: Ya no se envía el ID de la cancha específica desde el frontend.
+    @NotNull(message = "El ID del complejo es obligatorio")
+    private Long complejoId; // NUEVO: ID del Complejo al que pertenece la reserva
 
-    @NotBlank(message = "El tipo de cancha es obligatorio") // NUEVO: Validar que el tipo de cancha no sea nulo/vacío
-    private String tipoCancha; // NUEVO: Campo para el tipo de cancha (ej. "Fútbol 5", "Pádel")
+    @NotBlank(message = "El tipo de cancha es obligatorio")
+    private String tipoCancha; // Tipo de cancha que el usuario quiere reservar (ej. "Fútbol 5")
 
     @NotNull(message = "La fecha es obligatoria")
-    // Se elimina @Future aquí porque la validación se hará más robusta en el servicio para evitar conflictos en un mismo día.
+    // @Future(message = "La fecha debe ser en el futuro") // La validación detallada se hará en el Servicio
     private LocalDate fecha;
 
     @NotNull(message = "La hora es obligatoria")
@@ -31,7 +32,7 @@ public class ReservaDTO {
     @NotBlank(message = "El apellido es obligatorio")
     private String apellido;
 
-    @NotBlank(message = "El DNI es obligatorio") // Añadir NotBlank si se valida que no esté vacío
+    @NotBlank(message = "El DNI es obligatorio")
     private String dni;
 
     @NotBlank(message = "El teléfono es obligatorio")
@@ -40,9 +41,7 @@ public class ReservaDTO {
     @NotBlank(message = "El método de pago es obligatorio")
     private String metodoPago;
 
-    // Si necesitas manejar jugadores y equipos desde el DTO, asegúrate de que estén aquí.
-    // Los mantengo comentados ya que no estaban en tu DTO de entrada original en la última petición,
-    // pero sí en Reserva.java. Si se envían desde el frontend, deben estar aquí.
+    // Si la reserva incluye lista de jugadores o equipos, deben estar aquí en el DTO
     // private List<String> jugadores;
     // private Set<String> equipo1;
     // private Set<String> equipo2;

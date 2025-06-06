@@ -16,37 +16,42 @@ import java.util.Optional;
 @Repository
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
-    List<Reserva> findByCanchaId(Long canchaId);
+    // ELIMINADO: Ya no se buscan reservas por canchaId específica
+    // List<Reserva> findByCanchaId(Long canchaId);
 
-    @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
-    List<Reserva> findByUsuario(User usuario);
-
-    Reserva findByPreferenceId(String preferenceId);
-
-    @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
-    List<Reserva> findAll();
-
-    @Override
-    @EntityGraph(attributePaths = {"usuario", "cancha", "jugadores", "equipo1", "equipo2"})
-    Optional<Reserva> findById(Long id);
-
-    // CONSULTA CORREGIDA FINAL: Encontrar reservas que se solapan con un nuevo slot
-    // Cambiado 'MINUTE' (con comillas) a MINUTE (sin comillas) para el TIMESTAMPADD
-    @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
-            "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
-            "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', MINUTE, 60, r.fechaHora) > :startTime)")
-    List<Reserva> findConflictingReservations(
-            @Param("canchaId") Long canchaId,
+    // NUEVO MÉTODO: Buscar reservas que se solapan para un COMPLEJO y TIPO DE CANCHA específico
+    // Usado para verificar conflictos en el pool de canchas.
+    @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
+            "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp') AND " + // Estados que bloquean el slot
+            "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', 'MINUTE', 60, r.fechaHora) > :startTime)")
+    List<Reserva> findConflictingReservationsForPool(
+            @Param("complejoId") Long complejoId,
+            @Param("tipoCancha") String tipoCancha,
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
     );
 
-    // Esta consulta ya estaba correcta
-    @Query("SELECT r FROM Reserva r WHERE r.cancha.id = :canchaId AND " +
+    // NUEVO MÉTODO: Buscar todas las reservas de un COMPLEJO y TIPO DE CANCHA en una fecha específica
+    // Útil para el administrador para ver el "calendario" de un tipo de cancha.
+    @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
             "FUNCTION('DATE', r.fechaHora) = :fecha AND " +
-            "(r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'confirmada_efectivo' OR r.estado = 'pendiente_pago_mp')")
-    List<Reserva> findOccupiedSlotsByCanchaAndDate(
-            @Param("canchaId") Long canchaId,
+            "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp')")
+    List<Reserva> findOccupiedSlotsByComplejoAndTipoCanchaAndDate(
+            @Param("complejoId") Long complejoId,
+            @Param("tipoCancha") String tipoCancha,
             @Param("fecha") LocalDate fecha
     );
+
+
+    @EntityGraph(attributePaths = {"usuario", "complejo"}) // Adaptar EntityGraph para Complejo
+    List<Reserva> findByUsuario(User usuario);
+
+    Reserva findByPreferenceId(String preferenceId);
+
+    @EntityGraph(attributePaths = {"usuario", "complejo"}) // Adaptar EntityGraph para Complejo
+    List<Reserva> findAll();
+
+    @Override
+    @EntityGraph(attributePaths = {"usuario", "complejo"}) // Adaptar EntityGraph para Complejo
+    Optional<Reserva> findById(Long id);
 }

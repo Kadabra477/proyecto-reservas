@@ -40,16 +40,22 @@ public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     private final JWTUtil jwtUtil;
+    private final UsuarioServicio usuarioServicio; // Inyectar UsuarioServicio aquí
 
     @Value("${frontend.url}")
     private String frontendUrl;
 
-    private final JWTAuthenticationFilter jwtAuthenticationFilter;
-
-    public SecurityConfig(JWTUtil jwtUtil) {
+    // Constructor que ahora recibe UsuarioServicio
+    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
         this.jwtUtil = jwtUtil;
-        this.jwtAuthenticationFilter = new JWTAuthenticationFilter(jwtUtil);
-        log.info("SecurityConfig initialized.");
+        this.usuarioServicio = usuarioServicio; // Asignar al campo
+        log.info("SecurityConfig initialized with JWTUtil and UsuarioServicio.");
+    }
+
+    @Bean
+    public JWTAuthenticationFilter authenticationJwtTokenFilter() {
+        // Ahora el filtro se construye con UsuarioServicio
+        return new JWTAuthenticationFilter(jwtUtil, usuarioServicio);
     }
 
     @Bean
@@ -70,7 +76,7 @@ public class SecurityConfig {
                     }
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // Rutas públicas que no requieren autenticación
+                        // Rutas públicas
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
@@ -78,22 +84,40 @@ public class SecurityConfig {
                                 "/api/pagos/ipn", "/api/pagos/notificacion",
                                 "/error", "/error-404"
                         ).permitAll()
-                        // Rutas GET específicas permitidas
-                        .requestMatchers(HttpMethod.GET, "/api/canchas", "/api/canchas/**").permitAll()
+
+                        // Rutas públicas de Complejos y disponibilidad de reservas
+                        .requestMatchers(HttpMethod.GET, "/api/complejos", "/api/complejos/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reservas/disponibilidad-por-tipo").permitAll()
 
                         // Rutas protegidas que requieren autenticación
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
-                        .requestMatchers("/api/reservas/**").authenticated()
+
+                        // Rutas de Reservas
+                        .requestMatchers("/api/reservas/crear").authenticated()
+                        .requestMatchers("/api/reservas/usuario").authenticated()
+                        .requestMatchers("/api/reservas/{id}").authenticated()
+                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").authenticated()
+
+                        // Rutas de Pagos
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
-                        .requestMatchers("/api/pagos/pdf/**").authenticated()
+
+                        // Rutas de Admin (Requieren rol ADMIN)
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        // NUEVO: Proteger el endpoint de estadísticas para el rol ADMIN
                         .requestMatchers("/api/estadisticas/admin").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/complejos").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/complejos/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasRole("ADMIN")
+                        .requestMatchers("/api/reservas/admin/todas").hasRole("ADMIN")
+                        .requestMatchers("/api/reservas/{id}/confirmar").hasRole("ADMIN")
+                        .requestMatchers("/api/reservas/{id}/marcar-pagada").hasRole("ADMIN")
+                        .requestMatchers("/api/reservas/{id}/equipos").hasRole("ADMIN")
+                        .requestMatchers("/api/reservas/{id}").hasRole("ADMIN")
+
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class) // Usa el bean del filtro
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oAuth2AuthenticationSuccessHandler())
                         .failureHandler((request, response, exception) -> {
@@ -109,7 +133,6 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Asegúrate de que todas tus URLs de frontend (localhost, Vercel, etc.) estén aquí
         config.setAllowedOrigins(List.of(frontendUrl, "https://proyecto-reservas-jsw5.onrender.com", "http://localhost:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
@@ -136,8 +159,8 @@ public class SecurityConfig {
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
-                String nombre = oauthUser.getAttribute("name");
-                String role = oauthUser.getAuthorities().stream()
+                String nombreCompleto = oauthUser.getAttribute("name");
+                String role = authentication.getAuthorities().stream() // Obtiene el rol directamente de authentication
                         .map(GrantedAuthority::getAuthority)
                         .filter(a -> a.startsWith("ROLE_"))
                         .map(a -> a.substring(5))
@@ -151,11 +174,11 @@ public class SecurityConfig {
                 }
 
                 try {
-                    String token = jwtUtil.generateTokenFromEmail(email);
-                    String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8); // Ajuste aquí la ruta de redirección del frontend para OAuth2
-                    if (nombre != null && !nombre.isEmpty()) {
-                        targetUrl += "&name=" + URLEncoder.encode(nombre, StandardCharsets.UTF_8);
-                    }
+                    // Usar generateTokenFromEmail que ahora toma nombreCompleto y role
+                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
+                    String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+
+                    targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8); // Asegurar no null
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
                     targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 

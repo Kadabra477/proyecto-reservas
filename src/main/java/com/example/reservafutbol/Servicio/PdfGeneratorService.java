@@ -35,20 +35,18 @@ public class PdfGeneratorService {
             doc.open();
 
             // --- Definición de Fuentes y Colores ---
-            // Usando colores de tu diseño: Primary (azul) y otros grises/negros
-            BaseColor primaryColor = new BaseColor(46, 116, 181); // var(--primary)
-            BaseColor primaryDarkColor = new BaseColor(30, 80, 130); // Un poco más oscuro que --primary
-            BaseColor darkTextColor = new BaseColor(51, 51, 51); // var(--text-dark) o similar
-            BaseColor lightTextColor = new BaseColor(102, 102, 102); // var(--text-light) o similar
+            BaseColor primaryColor = new BaseColor(46, 116, 181);
+            BaseColor primaryDarkColor = new BaseColor(30, 80, 130);
+            BaseColor darkTextColor = new BaseColor(51, 51, 51);
+            BaseColor lightTextColor = new BaseColor(102, 102, 102);
             BaseColor lineColor = new BaseColor(200, 200, 200);
 
             BaseFont bfHelveticaBold = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.WINANSI, BaseFont.EMBEDDED);
             BaseFont bfHelvetica = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.WINANSI, BaseFont.EMBEDDED);
 
-            // Fuente para el texto del logo (más grande y con tu color principal)
             Font logoTextFont = new Font(bfHelveticaBold, 28, Font.NORMAL, primaryColor);
             Font mainTitleFont = new Font(bfHelveticaBold, 22, Font.NORMAL, darkTextColor);
-            Font sectionTitleFont = new Font(bfHelveticaBold, 14, Font.NORMAL, primaryDarkColor); // Títulos de sección en color principal oscuro
+            Font sectionTitleFont = new Font(bfHelveticaBold, 14, Font.NORMAL, primaryDarkColor);
             Font headerFooterFont = new Font(bfHelvetica, 9, Font.ITALIC, lightTextColor);
             Font labelFont = new Font(bfHelveticaBold, 10, Font.NORMAL, darkTextColor);
             Font valueFont = new Font(bfHelvetica, 10, Font.NORMAL, BaseColor.BLACK);
@@ -57,18 +55,16 @@ public class PdfGeneratorService {
             Font importantNoteFont = new Font(bfHelveticaBold, 10, Font.NORMAL, BaseColor.RED);
 
             // --- Encabezado del documento: Texto del Logo y Título ---
-            // Usar solo texto estilizado para el logo
             Paragraph logoText = new Paragraph("¿DÓNDE JUEGO?", logoTextFont);
             logoText.setAlignment(Element.ALIGN_CENTER);
             doc.add(logoText);
-            doc.add(new Paragraph("\n")); // Espacio después del logo
+            doc.add(new Paragraph("\n"));
 
             Paragraph headerTitle = new Paragraph("Comprobante de Reserva", mainTitleFont);
             headerTitle.setAlignment(Element.ALIGN_CENTER);
             headerTitle.setSpacingAfter(10f);
             doc.add(headerTitle);
 
-            // Línea divisoria
             LineSeparator line = new LineSeparator();
             line.setLineColor(lineColor);
             line.setLineWidth(0.5f);
@@ -90,9 +86,14 @@ public class PdfGeneratorService {
             tablaDetalles.getDefaultCell().setBorder(Rectangle.NO_BORDER);
 
             addKeyValueRow(tablaDetalles, "ID Reserva:", String.valueOf(reserva.getId()), labelFont, valueFont);
-            addKeyValueRow(tablaDetalles, "Cancha:", reserva.getCancha() != null && reserva.getCancha().getNombre() != null ? reserva.getCancha().getNombre() : "N/A", labelFont, valueFont);
-            if (reserva.getCancha() != null && reserva.getCancha().getUbicacion() != null) {
-                addKeyValueRow(tablaDetalles, "Ubicación:", reserva.getCancha().getUbicacion(), labelFont, valueFont);
+            // MODIFICADO: Ahora es Complejo y Tipo de Cancha
+            addKeyValueRow(tablaDetalles, "Complejo:", reserva.getComplejo() != null ? reserva.getComplejo().getNombre() : "N/A", labelFont, valueFont);
+            addKeyValueRow(tablaDetalles, "Tipo de Cancha:", reserva.getTipoCanchaReservada() != null ? reserva.getTipoCanchaReservada() : "N/A", labelFont, valueFont);
+            // Si la asignación interna tiene un nombre
+            addKeyValueRow(tablaDetalles, "Cancha Asignada:", reserva.getNombreCanchaAsignada() != null ? reserva.getNombreCanchaAsignada() : "N/A", labelFont, valueFont);
+
+            if (reserva.getComplejo() != null && reserva.getComplejo().getUbicacion() != null) {
+                addKeyValueRow(tablaDetalles, "Ubicación:", reserva.getComplejo().getUbicacion(), labelFont, valueFont);
             }
             if (reserva.getFechaHora() != null) {
                 Date fechaHoraDate = Date.from(reserva.getFechaHora().atZone(ZoneId.systemDefault()).toInstant());
@@ -136,15 +137,21 @@ public class PdfGeneratorService {
             tablaPago.getDefaultCell().setBorder(Rectangle.NO_BORDER);
 
             String estadoTexto;
-            if (Boolean.TRUE.equals(reserva.getPagada())) {
+            if ("pagada".equalsIgnoreCase(reserva.getEstado())) {
                 estadoTexto = "Pagada";
-            } else if ("efectivo".equalsIgnoreCase(reserva.getMetodoPago()) && Boolean.TRUE.equals(reserva.getConfirmada())) {
-                estadoTexto = "Confirmada (Pendiente de Pago en Efectivo)";
-            } else if ("mercadopago".equalsIgnoreCase(reserva.getMetodoPago()) && !Boolean.TRUE.equals(reserva.getPagada())) {
+            } else if ("pendiente_pago_efectivo".equalsIgnoreCase(reserva.getEstado())) {
+                estadoTexto = "Pendiente de Pago (Efectivo)";
+            } else if ("pendiente_pago_mp".equalsIgnoreCase(reserva.getEstado())) {
                 estadoTexto = "Pendiente de Pago (Mercado Pago)";
-            } else {
-                estadoTexto = "Pendiente de Confirmación";
+            } else if ("cancelada".equalsIgnoreCase(reserva.getEstado())) {
+                estadoTexto = "Cancelada";
+            } else if ("rechazada_pago_mp".equalsIgnoreCase(reserva.getEstado())) {
+                estadoTexto = "Rechazada (Mercado Pago)";
             }
+            else {
+                estadoTexto = "Pendiente"; // Estado genérico
+            }
+
             addKeyValueRow(tablaPago, "Estado Reserva:", estadoTexto, labelFont, valueFont);
             addKeyValueRow(tablaPago, "Método de Pago:", reserva.getMetodoPago() != null ? reserva.getMetodoPago() : "No especificado", labelFont, valueFont);
             addKeyValueRow(tablaPago, "ID Pago MP:", reserva.getMercadoPagoPaymentId() != null ? reserva.getMercadoPagoPaymentId() : "-", labelFont, valueFont);
@@ -179,7 +186,7 @@ public class PdfGeneratorService {
 
 
             // --- Nota Importante ---
-            Paragraph importantNote = new Paragraph("IMPORTANTE: Deberás presentar este comprobante (impreso o digital) al llegar a la cancha.", importantNoteFont);
+            Paragraph importantNote = new Paragraph("IMPORTANTE: Deberás presentar este comprobante (impreso o digital) al llegar al complejo.", importantNoteFont);
             importantNote.setAlignment(Element.ALIGN_CENTER);
             doc.add(importantNote);
 
@@ -188,7 +195,6 @@ public class PdfGeneratorService {
             footer.setAlignment(Element.ALIGN_RIGHT);
             footer.setSpacingBefore(20f);
             doc.add(footer);
-
 
             log.info("Contenido del PDF generado para Reserva ID: {}", reserva.getId());
 

@@ -1,9 +1,9 @@
 package com.example.reservafutbol.Servicio;
 
-import com.example.reservafutbol.Modelo.Cancha;
+import com.example.reservafutbol.Modelo.Complejo; // Importar Complejo
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
-import com.example.reservafutbol.Repositorio.CanchaRepositorio;
+import com.example.reservafutbol.Repositorio.ComplejoRepositorio; // Importar ComplejoRepositorio
 import com.example.reservafutbol.Repositorio.ReservaRepositorio;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import com.example.reservafutbol.payload.response.EstadisticasResponse; // Asegúrate de que este DTO exista
@@ -25,13 +25,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.Map;
 import java.util.stream.Collectors;
-
-// Importar ZoneId para manejo de zonas horarias si fuera necesario
-// import java.time.ZoneId;
 
 @Service
 public class ReservaServicio {
@@ -45,7 +42,7 @@ public class ReservaServicio {
     private UsuarioRepositorio usuarioRepositorio;
 
     @Autowired
-    private CanchaRepositorio canchaRepositorio;
+    private ComplejoRepositorio complejoRepositorio; // Inyectar ComplejoRepositorio
 
     @Autowired
     private EmailService emailService;
@@ -54,18 +51,25 @@ public class ReservaServicio {
     private String adminEmail;
 
     private static final int SLOT_DURATION_MINUTES = 60;
-    private static final LocalTime OPEN_TIME = LocalTime.of(10, 0); // Abre a las 10:00 AM
-    private static final LocalTime LAST_BOOKABLE_HOUR_START = LocalTime.of(23, 0); // Último slot que comienza a las 23:00 (para terminar a las 00:00)
+    // Horarios de apertura y cierre por defecto. Idealmente, estos vendrían del Complejo.
+    private static final LocalTime DEFAULT_OPEN_TIME = LocalTime.of(10, 0); // 10:00 AM
+    private static final LocalTime DEFAULT_LAST_BOOKABLE_HOUR_START = LocalTime.of(23, 0); // Último slot comienza a las 23:00
 
-    // Método anterior (listarReservas por canchaId) se mantiene para compatibilidad
-    public List<Reserva> listarReservas(Long canchaId) {
-        log.info("Buscando reservas para cancha ID: {}", canchaId);
-        return reservaRepositorio.findByCanchaId(canchaId);
+    // Método `listarReservas` (por ID de Complejo, no de cancha específica)
+    public List<Reserva> listarReservasPorComplejo(Long complejoId) {
+        log.info("Buscando reservas para complejo ID: {}", complejoId);
+        // Aquí necesitaríamos un método en ReservaRepositorio como findByComplejoId
+        // Por ahora, usaremos findAll() y filtraremos en Java, o crearemos el método si es necesario.
+        return reservaRepositorio.findAll().stream()
+                .filter(reserva -> reserva.getComplejo() != null && reserva.getComplejo().getId().equals(complejoId))
+                .collect(Collectors.toList());
     }
 
     @Transactional
+    // MODIFICADO: `crearReserva` ahora espera que la reserva ya tenga el Complejo asignado.
+    // La asignación de la "instancia de cancha" (ej. "Fútbol 5 - Instancia 3") se hace aquí o en el controlador.
     public Reserva crearReserva(Reserva reserva) {
-        // Validaciones previas que ya tenías
+        // Validaciones básicas
         if (reserva.getUsuario() == null && (reserva.getUserEmail() == null || reserva.getUserEmail().isBlank())) {
             throw new IllegalArgumentException("La reserva debe estar asociada a un usuario (email).");
         }
@@ -79,18 +83,18 @@ public class ReservaServicio {
             throw new IllegalArgumentException("El método de pago es obligatorio.");
         }
 
-        // VALIDACIÓN CRÍTICA: Asegurarse de que el objeto Cancha ya esté asignado en la reserva por el controlador
-        if (reserva.getCancha() == null || reserva.getCancha().getId() == null) {
-            log.error("Error: Reserva recibida sin una cancha asignada. El controlador debe asignar la cancha antes de llamar a crearReserva.");
-            throw new IllegalStateException("Error interno al procesar la reserva: cancha no asignada.");
+        // VALIDACIÓN CRÍTICA: Asegurarse de que el objeto Complejo ya esté asignado en la reserva por el controlador
+        if (reserva.getComplejo() == null || reserva.getComplejo().getId() == null) {
+            log.error("Error: Reserva recibida sin un complejo asignado. El controlador debe asignar el complejo antes de llamar a crearReserva.");
+            throw new IllegalStateException("Error interno al procesar la reserva: complejo no asignado.");
+        }
+        // VALIDACIÓN CRÍTICA: Asegurarse de que el tipo de cancha reservado exista
+        if (reserva.getTipoCanchaReservada() == null || reserva.getTipoCanchaReservada().isBlank()) {
+            log.error("Error: Reserva recibida sin tipo de cancha reservada.");
+            throw new IllegalArgumentException("El tipo de cancha reservada es obligatorio.");
         }
 
-        Cancha canchaAsignada = reserva.getCancha();
-
-        // Validar si la cancha asignada está disponible (estado general)
-        if (Boolean.FALSE.equals(canchaAsignada.getDisponible())) {
-            throw new IllegalArgumentException("La cancha asignada ('" + canchaAsignada.getNombre() + "') no está disponible para reservas en este momento.");
-        }
+        Complejo complejoAsignado = reserva.getComplejo();
 
         // Validación de fecha y hora futura
         LocalDateTime now = LocalDateTime.now();
@@ -99,33 +103,44 @@ public class ReservaServicio {
         }
 
         // --- VALIDACIÓN FINAL DE DISPONIBILIDAD DEL SLOT (Anti-doble reserva) ---
+        // Se hace para el POOL de canchas de un TIPO dentro de un COMPLEJO.
         LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
-        List<Reserva> conflictos = reservaRepositorio.findConflictingReservations(
-                canchaAsignada.getId(),
+
+        // Contar cuántas canchas de este tipo ya están reservadas para este slot en este complejo
+        List<Reserva> conflictosExistentes = reservaRepositorio.findConflictingReservationsForPool(
+                complejoAsignado.getId(),
+                reserva.getTipoCanchaReservada(),
                 reserva.getFechaHora(),
                 slotEndTime
         );
 
-        if (!conflictos.isEmpty()) {
-            log.warn("Conflicto de reserva detectado para cancha {} en slot {}. Conflictos: {}", canchaAsignada.getId(), reserva.getFechaHora(), conflictos.stream().map(r -> r.getId().toString()).collect(Collectors.joining(",")));
-            throw new IllegalArgumentException("El horario seleccionado ya está reservado o se solapa con otra reserva. Por favor, elige otro horario.");
+        // Obtener la cantidad total de canchas de este tipo en el complejo
+        Integer totalCanchasDeEsteTipo = complejoAsignado.getCanchaCounts().getOrDefault(reserva.getTipoCanchaReservada(), 0);
+
+        if (conflictosExistentes.size() >= totalCanchasDeEsteTipo) {
+            log.warn("Conflicto: Todas las {} canchas de tipo '{}' en complejo '{}' ya están reservadas para el slot {}.",
+                    totalCanchasDeEsteTipo, reserva.getTipoCanchaReservada(), complejoAsignado.getNombre(), reserva.getFechaHora());
+            throw new IllegalArgumentException("No hay canchas disponibles para el tipo y horario seleccionado en este complejo. Por favor, elige otro.");
         }
 
-        reserva.setCanchaNombre(canchaAsignada.getNombre());
-        if (canchaAsignada.getPrecioPorHora() != null) {
-            reserva.setPrecio(BigDecimal.valueOf(canchaAsignada.getPrecioPorHora()));
-        } else {
-            log.error("La cancha asignada {} (ID: {}) no tiene precio por hora definido.", canchaAsignada.getNombre(), canchaAsignada.getId());
-            throw new IllegalStateException("Error interno: El precio de la cancha no está definido.");
+        // --- ASIGNACIÓN INTERNA DE LA "INSTANCIA" DE CANCHA ---
+        // Aquí puedes generar un identificador para la instancia de cancha asignada (ej. "Fútbol 5 - Instancia 3")
+        // Simplemente lo creamos como un String para almacenar.
+        String nombreCanchaAsignada = reserva.getTipoCanchaReservada() + " - Instancia " + (conflictosExistentes.size() + 1);
+        reserva.setNombreCanchaAsignada(nombreCanchaAsignada);
+
+        // El precio ya debe venir del Complejo en el controlador o DTO
+        if (reserva.getPrecio() == null || reserva.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
+            // Este precio debería obtenerse del complejo. Se asume que el controlador ya lo ha asignado al DTO.
+            log.error("El precio de la reserva es nulo o inválido al intentar guardar.");
+            throw new IllegalStateException("Error interno: El precio de la reserva no está definido.");
         }
 
         // --- ASIGNACIÓN DE ESTADO INICIAL ---
         if ("efectivo".equalsIgnoreCase(reserva.getMetodoPago())) {
-            reserva.setConfirmada(true);
             reserva.setPagada(false);
             reserva.setEstado("pendiente_pago_efectivo");
-        } else {
-            reserva.setConfirmada(true);
+        } else { // Para Mercado Pago
             reserva.setPagada(false);
             reserva.setEstado("pendiente_pago_mp");
         }
@@ -133,7 +148,8 @@ public class ReservaServicio {
         reserva.setMercadoPagoPaymentId(null);
 
         Reserva reservaGuardada = reservaRepositorio.save(reserva);
-        log.info("Reserva creada con ID: {} para cancha {} (tipo: {})", reservaGuardada.getId(), canchaAsignada.getNombre(), canchaAsignada.getTipoCancha());
+        log.info("Reserva creada con ID: {} para complejo {} (tipo: {}) y asignada a: {}",
+                reservaGuardada.getId(), complejoAsignado.getNombre(), reserva.getTipoCanchaReservada(), nombreCanchaAsignada);
 
         // --- NOTIFICACIÓN AL DUEÑO ---
         try {
@@ -158,21 +174,17 @@ public class ReservaServicio {
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
 
-        if (!"pagada".equalsIgnoreCase(r.getEstado()) && !"cancelada".equalsIgnoreCase(r.getEstado()) && !"rechazada_pago_mp".equalsIgnoreCase(r.getEstado())) {
-            r.setConfirmada(true);
-            if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado())) {
-                r.setEstado("confirmada");
-            } else if ("pendiente".equalsIgnoreCase(r.getEstado())) {
-                r.setEstado("confirmada");
-            }
-
-            Reserva reservaConfirmada = reservaRepositorio.save(r);
-            log.info("Reserva con ID: {} confirmada exitosamente.", id);
-            return reservaConfirmada;
-        } else {
-            log.warn("No se pudo confirmar la reserva con ID: {} porque su estado actual es '{}'.", id, r.getEstado());
-            throw new IllegalStateException("La reserva no puede ser confirmada en su estado actual: ya está pagada/cancelada.");
+        // Unificar el estado 'confirmada' con 'pagada' o 'pendiente_pago_efectivo'
+        if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado())) {
+            r.setEstado("confirmada"); // Si el admin la confirma antes que MP pague
+        } else if ("pendiente".equalsIgnoreCase(r.getEstado())) { // Si estaba en estado genérico 'pendiente'
+            r.setEstado("confirmada");
         }
+        // Si ya está pagada o pendiente_pago_efectivo, no hay más que confirmar.
+
+        Reserva reservaConfirmada = reservaRepositorio.save(r);
+        log.info("Reserva con ID: {} confirmada exitosamente. Nuevo estado: {}", id, reservaConfirmada.getEstado());
+        return reservaConfirmada;
     }
 
     @Transactional
@@ -200,7 +212,7 @@ public class ReservaServicio {
                     log.warn("Usuario no encontrado para obtener reservas: {}", username);
                     return new UsernameNotFoundException("Usuario no encontrado: " + username);
                 });
-        log.info("Buscando reservas (con usuario y cancha) para Usuario ID: {}", usuario.getId());
+        log.info("Buscando reservas (con usuario y complejo) para Usuario ID: {}", usuario.getId());
         return reservaRepositorio.findByUsuario(usuario);
     }
 
@@ -210,6 +222,7 @@ public class ReservaServicio {
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
+        // El estado se actualizará vía @PreUpdate
         return reservaRepositorio.save(reserva);
     }
 
@@ -241,109 +254,104 @@ public class ReservaServicio {
         return reservaGuardada;
     }
 
-    // --- MÉTODO: Contar canchas disponibles por tipo para un slot dado ---
+    // --- NUEVO MÉTODO: Contar canchas disponibles por tipo para un slot dado en un complejo ---
     @Transactional(readOnly = true)
-    public int countAvailableCanchasForSlot(String tipoCancha, LocalDate fecha, LocalTime hora) {
-        log.info("Contando canchas de tipo '{}' disponibles para {} a las {}", tipoCancha, fecha, hora);
+    public int countAvailableCanchasForSlot(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
+        log.info("Contando canchas de tipo '{}' disponibles en complejo ID: {} para {} a las {}", tipoCancha, complejoId, fecha, hora);
 
-        List<Cancha> canchasDelTipo = canchaRepositorio.findByTipoCanchaAndDisponibleTrue(tipoCancha);
-        if (canchasDelTipo.isEmpty()) {
-            log.debug("No hay canchas de tipo '{}' marcadas como disponibles.", tipoCancha);
+        Complejo complejo = complejoRepositorio.findById(complejoId)
+                .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
+
+        Integer totalCanchasDeEsteTipo = complejo.getCanchaCounts().getOrDefault(tipoCancha, 0);
+        if (totalCanchasDeEsteTipo <= 0) {
+            log.debug("Complejo '{}' no tiene canchas de tipo '{}' configuradas o la cantidad es 0.", complejo.getNombre(), tipoCancha);
             return 0;
         }
 
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
-        int availableCount = 0;
+        // Contar cuántas reservas existen que bloquean el slot para este tipo de cancha en este complejo
+        List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
+                complejoId,
+                tipoCancha,
+                slotStartTime,
+                slotEndTime
+        );
 
-        for (Cancha cancha : canchasDelTipo) {
-            List<Reserva> conflictos = reservaRepositorio.findConflictingReservations(
-                    cancha.getId(),
-                    slotStartTime,
-                    slotEndTime
-            );
-            if (conflictos.isEmpty()) {
-                availableCount++;
+        int bookedCount = conflictos.size();
+        int availableCount = totalCanchasDeEsteTipo - bookedCount;
+
+        // Asegurarse de no devolver un número negativo
+        availableCount = Math.max(0, availableCount);
+
+        // Considerar la hora actual si la fecha es hoy
+        if (fecha.isEqual(LocalDate.now())) {
+            LocalTime nowTime = LocalTime.now().truncatedTo(ChronoUnit.MINUTES);
+            if (hora.isBefore(nowTime) || hora.equals(nowTime)) { // Si el slot ya pasó o está pasando
+                log.debug("Slot {} para tipo {} en complejo {} está en el pasado o presente, marcando como 0 disponibles.", hora, tipoCancha, complejoId);
+                availableCount = 0;
             }
         }
-        log.debug("Encontradas {} canchas de tipo '{}' disponibles para {} a las {}", availableCount, tipoCancha, fecha, hora);
+
+        log.debug("Encontradas {} canchas de tipo '{}' disponibles en complejo '{}' para {} a las {}. (Total: {}, Reservadas: {})",
+                availableCount, tipoCancha, complejo.getNombre(), fecha, hora, totalCanchasDeEsteTipo, bookedCount);
         return availableCount;
     }
 
-    // --- MÉTODO: Obtener la primera cancha disponible de un tipo para un slot dado ---
+    // NUEVO MÉTODO: Obtener la "instancia" de cancha asignada (ej. "Fútbol 5 - Instancia 3")
+    // Este método es usado INTERNAMENTE por el controlador/servicio para asignar un nombre a la reserva.
     @Transactional(readOnly = true)
-    public Optional<Cancha> findFirstAvailableCancha(String tipoCancha, LocalDate fecha, LocalTime hora) {
-        log.info("Buscando la primera cancha disponible de tipo '{}' para {} a las {}", tipoCancha, fecha, hora);
+    public Optional<String> generateAssignedCanchaName(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
+        log.info("Generando nombre de cancha asignada para complejo ID: {} tipo: {} en slot: {}", complejoId, tipoCancha, fecha + " " + hora);
 
-        List<Cancha> canchasDelTipo = canchaRepositorio.findByTipoCanchaAndDisponibleTrue(tipoCancha);
-        if (canchasDelTipo.isEmpty()) {
-            log.debug("No hay canchas de tipo '{}' marcadas como disponibles para asignar.", tipoCancha);
-            return Optional.empty();
+        Complejo complejo = complejoRepositorio.findById(complejoId)
+                .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
+
+        Integer totalCanchasDeEsteTipo = complejo.getCanchaCounts().getOrDefault(tipoCancha, 0);
+        if (totalCanchasDeEsteTipo <= 0) {
+            return Optional.empty(); // No hay canchas de este tipo
         }
 
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
-        canchasDelTipo.sort(Comparator.comparing(Cancha::getId));
+        List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
+                complejoId,
+                tipoCancha,
+                slotStartTime,
+                slotEndTime
+        );
 
-        for (Cancha cancha : canchasDelTipo) {
-            List<Reserva> conflictos = reservaRepositorio.findConflictingReservations(
-                    cancha.getId(),
-                    slotStartTime,
-                    slotEndTime
-            );
-            if (conflictos.isEmpty()) {
-                log.debug("Cancha '{}' (ID: {}) encontrada disponible de tipo '{}' para {} a las {}. Asignando.", cancha.getNombre(), cancha.getId(), tipoCancha, fecha, hora);
-                return Optional.of(cancha);
-            }
+        // La "instancia" asignada será el número de reservas existentes + 1
+        // Esto asume que las instancias se nombran de 1 a N.
+        if (conflictos.size() < totalCanchasDeEsteTipo) {
+            String nombreInstancia = tipoCancha + " - Instancia " + (conflictos.size() + 1);
+            log.debug("Nombre de instancia asignado: {}", nombreInstancia);
+            return Optional.of(nombreInstancia);
         }
-        log.debug("No se encontró ninguna cancha de tipo '{}' disponible para {} a las {}. Todas ocupadas.", tipoCancha, fecha, hora);
-        return Optional.empty();
+
+        log.debug("Todas las canchas de tipo '{}' en complejo '{}' están ocupadas para el slot {}.", tipoCancha, complejo.getNombre(), fecha + " " + hora);
+        return Optional.empty(); // No hay instancias disponibles
     }
 
-    // --- MÉTODO: getAvailableTimeSlots (Para canchas específicas) ---
-    // Este método se mantiene para compatibilidad con el frontend si aún permite reservar por canchaId.
+
+    // El método `getAvailableTimeSlots(Long canchaId, LocalDate fecha)` antiguo ya no es útil
+    // para el flujo de "pool de canchas" y debería ser eliminado si ya no hay canchas individuales.
+    // Si aún se usa en alguna parte (ej. Admin Panel para ver un calendario de UNA cancha física),
+    // debería adaptarse para trabajar con la nueva estructura o eliminarse.
+    // Lo comento aquí para que no genere un error de compilación.
+    /*
     @Transactional(readOnly = true)
     public List<String> getAvailableTimeSlots(Long canchaId, LocalDate fecha) {
-        log.info("Consultando slots disponibles para cancha ID: {} en fecha: {}", canchaId, fecha);
-
-        List<String> allPossibleSlots = new ArrayList<>();
-        LocalTime currentTime = OPEN_TIME;
-        while (currentTime.isBefore(LAST_BOOKABLE_HOUR_START) || currentTime.equals(LAST_BOOKABLE_HOUR_START)) {
-            allPossibleSlots.add(currentTime.toString());
-            currentTime = currentTime.plusMinutes(SLOT_DURATION_MINUTES);
-        }
-
-        // ¡¡CORRECCIÓN AQUÍ: EL NOMBRE DEL MÉTODO EN EL REPOSITORIO ES findOccupiedSlotsByCanchaAndDate!!
-        List<Reserva> occupiedReservations = reservaRepositorio.findOccupiedSlotsByCanchaAndDate(canchaId, fecha);
-
-        Set<String> occupiedSlots = occupiedReservations.stream()
-                .map(reserva -> reserva.getFechaHora().toLocalTime().truncatedTo(ChronoUnit.HOURS).toString())
-                .collect(Collectors.toSet());
-
-        List<String> availableSlots = allPossibleSlots.stream()
-                .filter(slot -> !occupiedSlots.contains(slot))
-                .collect(Collectors.toList());
-
-        // La hora local en San Martín, Mendoza, Argentina.
-        // Considerando el horario de verano/invierno, pero para simplificar, usaremos la hora actual del sistema.
-        // Si necesitas una zona horaria específica, usa:
-        // ZoneId argentinaZone = ZoneId.of("America/Argentina/Mendoza");
-        // LocalTime nowTime = LocalTime.now(argentinaZone).truncatedTo(ChronoUnit.MINUTES);
-        LocalTime nowTime = LocalTime.now().truncatedTo(ChronoUnit.MINUTES);
-
-
-        if (fecha.isEqual(LocalDate.now())) {
-            availableSlots = availableSlots.stream()
-                    .filter(slot -> LocalTime.parse(slot).isAfter(nowTime))
-                    .collect(Collectors.toList());
-        }
-        log.debug("Slots disponibles para cancha {} en {}: {}", canchaId, fecha, availableSlots);
-        return availableSlots;
+        log.warn("Llamada a método getAvailableTimeSlots(canchaId, fecha) que está siendo deprecado/revisado.");
+        // Esta lógica necesitaría reevaluarse si ya no tienes entidades 'Cancha'.
+        // Podrías mapearlo a una vista de un solo tipo de cancha o eliminarlo.
+        return Collections.emptyList();
     }
+    */
 
-    // --- Método calcularEstadisticas (Reincorporado y corregido en el último envío) ---
+    // --- Método calcularEstadisticas (Reincorporado y corregido) ---
     @Transactional(readOnly = true)
     public EstadisticasResponse calcularEstadisticas() {
         log.info("Calculando estadísticas del complejo...");
@@ -355,9 +363,8 @@ public class ReservaServicio {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         log.debug("Ingresos totales confirmados y pagados: {}", ingresosTotalesConfirmados);
 
-
         Long totalReservasConfirmadas = todasLasReservas.stream()
-                .filter(reserva -> reserva.getEstado().startsWith("confirmada") || "pagada".equalsIgnoreCase(reserva.getEstado()))
+                .filter(reserva -> "pagada".equalsIgnoreCase(reserva.getEstado()) || "confirmada".equalsIgnoreCase(reserva.getEstado()) || "pendiente_pago_efectivo".equalsIgnoreCase(reserva.getEstado()))
                 .count();
 
         Long totalReservasPendientes = todasLasReservas.stream()
@@ -370,10 +377,10 @@ public class ReservaServicio {
         log.debug("Reservas: Confirmadas={}, Pendientes={}, Canceladas={}",
                 totalReservasConfirmadas, totalReservasPendientes, totalReservasCanceladas);
 
-
-        Map<String, Long> reservasPorCancha = todasLasReservas.stream()
-                .collect(Collectors.groupingBy(Reserva::getCanchaNombre, Collectors.counting()));
-        log.debug("Reservas por cancha: {}", reservasPorCancha);
+        // MODIFICADO: Las estadísticas por cancha ahora son por TIPO DE CANCHA RESERVADA
+        Map<String, Long> reservasPorTipoCancha = todasLasReservas.stream()
+                .collect(Collectors.groupingBy(Reserva::getTipoCanchaReservada, Collectors.counting()));
+        log.debug("Reservas por tipo de cancha: {}", reservasPorTipoCancha);
 
         Map<String, Long> horariosPico = todasLasReservas.stream()
                 .map(reserva -> reserva.getFechaHora().toLocalTime().truncatedTo(ChronoUnit.HOURS))
@@ -386,7 +393,7 @@ public class ReservaServicio {
                 totalReservasConfirmadas,
                 totalReservasPendientes,
                 totalReservasCanceladas,
-                reservasPorCancha,
+                reservasPorTipoCancha, // Usar el mapa por tipo de cancha
                 horariosPico
         );
     }
