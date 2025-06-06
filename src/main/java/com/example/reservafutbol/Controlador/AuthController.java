@@ -1,179 +1,215 @@
 package com.example.reservafutbol.Controlador;
 
 import com.example.reservafutbol.Configuracion.JWTUtil;
+import com.example.reservafutbol.Modelo.ERole;
+import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
+import com.example.reservafutbol.Repositorio.RoleRepositorio;
+import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import com.example.reservafutbol.Servicio.EmailService;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import com.example.reservafutbol.payload.request.LoginRequest;
+import com.example.reservafutbol.payload.request.PasswordResetRequest;
+import com.example.reservafutbol.payload.request.RegisterRequest;
+import com.example.reservafutbol.payload.response.JwtResponse;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
-import java.util.Map;
+import java.util.HashSet;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-record ForgotPasswordRequest(@NotBlank @Email String email) {}
-// Ejemplo DTO para Reset Password Request
-record ResetPasswordRequest(@NotBlank String token,
-                            @NotBlank @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres") String newPassword) {}
-
-
+@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    @Value("${frontend.url}")
-    private String frontendUrl;
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired
-    private UsuarioServicio usuarioServicio;
+    AuthenticationManager authenticationManager;
 
     @Autowired
-    private JWTUtil jwtUtil;
+    UsuarioRepositorio usuarioRepositorio;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    RoleRepositorio roleRepositorio;
 
     @Autowired
-    private EmailService emailService;
+    PasswordEncoder encoder;
 
-    @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody User nuevoUsuario) {
-        // Validaciones básicas (puedes añadir más)
-        if (nuevoUsuario.getNombreCompleto() == null || nuevoUsuario.getNombreCompleto().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("❌ El nombre completo es obligatorio.");
-        }
-        if (nuevoUsuario.getUsername() == null || nuevoUsuario.getUsername().trim().isEmpty() || !nuevoUsuario.getUsername().contains("@")) {
-            return ResponseEntity.badRequest().body("❌ El correo electrónico (username) es inválido.");
-        }
-        if (nuevoUsuario.getPassword() == null || nuevoUsuario.getPassword().length() < 6) { // Asumiendo min 6 caracteres
-            return ResponseEntity.badRequest().body("❌ La contraseña debe tener al menos 6 caracteres.");
-        }
+    @Autowired
+    JWTUtil jwtUtil;
 
-        // Verificar si ya existe
-        if (usuarioServicio.findByUsername(nuevoUsuario.getUsername()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("❌ El correo electrónico ya está registrado.");
-        }
+    @Autowired
+    EmailService emailService;
 
-        // Preparar usuario
-        nuevoUsuario.setPassword(passwordEncoder.encode(nuevoUsuario.getPassword()));
-        nuevoUsuario.setRol("USER");
-        nuevoUsuario.setActive(false); // Inicia inactivo
-        String token = UUID.randomUUID().toString();
-        nuevoUsuario.setValidationToken(token);
-
-        // Intentar guardar y enviar email
-        try {
-            User usuarioGuardado = usuarioServicio.guardarUsuarioConRetorno(nuevoUsuario);
-            emailService.sendValidationEmail(usuarioGuardado.getUsername(), token);
-            return ResponseEntity.ok("✅ Registro casi completo. Revisa tu correo electrónico ("+ usuarioGuardado.getUsername() +") para validar la cuenta.");
-        } catch (Exception e) {
-            System.err.println("Error en /register: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("❌ Ocurrió un error interno durante el registro.");
-        }
-    }
-
-    // --- ENDPOINT DE VALIDACIÓN ---
-    @GetMapping("/validate")
-    public ResponseEntity<String> validateAccount(@RequestParam("token") String token) {
-        if (token == null || token.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Token inválido.");
-        }
-        boolean isValidated = usuarioServicio.validateUser(token);
-        if (isValidated) {
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", frontendUrl + "/login?validated=true")
-                    .build();
-
-        } else {
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", frontendUrl + "/login?error=validation_failed")
-                    .build();
-        }
-    }
+    @Autowired
+    UsuarioServicio usuarioServicio; // Inyectar UsuarioServicio
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody User userRequest) {
-        Optional<User> usuarioOpt = usuarioServicio.findByUsername(userRequest.getUsername());
-
-        if (usuarioOpt.isPresent()) {
-            User usuario = usuarioOpt.get();
-
-            if (!usuario.getActive()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Tu cuenta no está activa. Por favor, valida tu correo electrónico."));
-            }
-
-            // Comparar contraseña
-            if (passwordEncoder.matches(userRequest.getPassword(), usuario.getPassword())) {
-                String token = jwtUtil.generateToken(usuario.getUsername(), usuario.getRol());
-                Map<String, String> response = Map.of(
-                        "token", token,
-                        "username", usuario.getUsername(),
-                        "nombreCompleto", usuario.getNombreCompleto() != null ? usuario.getNombreCompleto() : "",
-                        "role", usuario.getRol() != null ? usuario.getRol() : "USER"
-                );
-                return ResponseEntity.ok(response);
-            }
-        }
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Credenciales incorrectas"));
-    }
-
-    // --- Endpoint para Solicitar Reseteo ---
-    @PostMapping("/forgot-password")
-    public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody ForgotPasswordRequest request) {
-        String token = usuarioServicio.createPasswordResetToken(request.email());
-
-        if (token != null) {
-            try {
-                emailService.sendPasswordResetEmail(request.email(), token);
-                return ResponseEntity.ok(Map.of("message", "Si la dirección de correo está registrada, recibirás un enlace para restablecer tu contraseña."));
-            } catch (Exception e) {
-                System.err.println("Error al ENVIAR email de reseteo para " + request.email() + ": " + e.getMessage());
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(Map.of("error", "Error al intentar enviar el correo de restablecimiento."));
-            }
-        } else {
-            System.out.println("Solicitud de reseteo para email no registrado: " + request.email());
-            return ResponseEntity.ok(Map.of("message", "Si la dirección de correo está registrada, recibirás un enlace para restablecer tu contraseña."));
-        }
-    }
-
-    // --- Endpoint para Ejecutar el Reseteo ---
-    @PostMapping("/reset-password")
-    public ResponseEntity<Map<String, String>> resetPassword(@RequestBody ResetPasswordRequest request) {
-        boolean success = usuarioServicio.resetPassword(request.token(), request.newPassword());
-
-        if (success) {
-            return ResponseEntity.ok(Map.of("message", "¡Contraseña actualizada con éxito!"));
-        } else {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "No se pudo restablecer la contraseña. El enlace puede ser inválido, haber expirado o la nueva contraseña no cumple los requisitos."));
-        }
-    }
-
-    // Validar token (para la autenticación inicial del frontend)
-    @GetMapping("/validate-token")
-    public ResponseEntity<?> validarToken(@RequestHeader("Authorization") String authHeader) {
+    public ResponseEntity<?> authenticateUser(@RequestBody LoginRequest loginRequest) {
+        log.info("POST /api/auth/login - Intento de login para: {}", loginRequest.getUsername());
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no proporcionado o mal formado");
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = jwtUtil.generateJwtToken(authentication);
+
+            User userDetails = (User) authentication.getPrincipal(); // Obtener el objeto User real
+
+            // Verificar si la cuenta está habilitada
+            if (!userDetails.isEnabled()) { // Usar .isEnabled() del modelo User
+                log.warn("Login fallido para {}: cuenta no activada.", userDetails.getUsername());
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Cuenta no activada. Por favor, verifica tu email.");
             }
-            String token = authHeader.substring(7);
-            boolean valido = jwtUtil.isTokenValid(token);
-            if (valido) {
-                return ResponseEntity.ok().build();
-            } else {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado");
-            }
+
+            // Obtener los roles del usuario para el frontend
+            List<String> roles = userDetails.getAuthorities().stream()
+                    .map(item -> item.getAuthority())
+                    .collect(Collectors.toList());
+
+            // Obtener el rol principal (asumiendo uno por simplicidad para el frontend)
+            String mainRole = roles.isEmpty() ? "USER" : roles.get(0).replace("ROLE_", "");
+
+            log.info("Login exitoso para {}. Rol: {}", userDetails.getUsername(), mainRole);
+
+            return ResponseEntity.ok(new JwtResponse(jwt,
+                    userDetails.getId(),
+                    userDetails.getUsername(),
+                    userDetails.getEmail(),
+                    userDetails.getNombreCompleto(),
+                    mainRole)); // Enviar el rol principal
         } catch (Exception e) {
-            System.err.println("Error inesperado al validar token en AuthController: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error al validar token");
+            log.error("Error durante el login para {}: {}", loginRequest.getUsername(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Usuario o contraseña incorrectos, o cuenta no activada.");
+        }
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@RequestBody RegisterRequest signUpRequest) {
+        log.info("POST /api/auth/register - Intento de registro para email: {}", signUpRequest.getEmail());
+
+        if (usuarioRepositorio.existsByUsername(signUpRequest.getUsername())) {
+            log.warn("Registro fallido: Username '{}' ya está en uso.", signUpRequest.getUsername());
+            return ResponseEntity
+                    .badRequest()
+                    .body("Error: ¡El nombre de usuario ya está en uso!");
+        }
+
+        if (usuarioRepositorio.existsByEmail(signUpRequest.getEmail())) {
+            log.warn("Registro fallido: Email '{}' ya está en uso.", signUpRequest.getEmail());
+            return ResponseEntity
+                    .badRequest()
+                    .body("Error: ¡El correo electrónico ya está en uso!");
+        }
+
+        // Crear nuevo usuario
+        User nuevoUsuario = new User(
+                signUpRequest.getUsername(),
+                signUpRequest.getEmail(),
+                encoder.encode(signUpRequest.getPassword()),
+                signUpRequest.getNombreCompleto());
+
+        // Asignar roles (por defecto ROLE_USER)
+        Set<Role> roles = new HashSet<>();
+        Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
+                .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
+        roles.add(userRole);
+        nuevoUsuario.setRoles(roles); // Usar setRoles()
+
+        // El resto de campos del perfil se inicializan o se pueden establecer por defecto
+        nuevoUsuario.setUbicacion(signUpRequest.getUbicacion());
+        // CompletoPerfil es un booleano, se inicializa en el constructor de User o en el servicio
+        nuevoUsuario.setCompletoPerfil(false); // Por defecto al registrar
+        // Estos campos ahora son parte del modelo User
+        // nuevoUsuario.setActive(false); // Se establece en el servicio registerNewUser()
+        // nuevoUsuario.setValidationToken(UUID.randomUUID().toString()); // Se establece en el servicio registerNewUser()
+
+        try {
+            // Usa el servicio de usuario para manejar la creación y envío de email de validación
+            usuarioServicio.registerNewUser(nuevoUsuario);
+            log.info("Usuario '{}' registrado exitosamente. Email de validación enviado.", signUpRequest.getUsername());
+            return ResponseEntity.ok("Usuario registrado exitosamente. Por favor, revisa tu email para activar tu cuenta.");
+        } catch (Exception e) {
+            log.error("Error durante el registro de usuario: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: No se pudo registrar el usuario. Intenta de nuevo.");
+        }
+    }
+
+    @GetMapping("/validate")
+    public ResponseEntity<String> validateAccount(@RequestParam("token") String token) {
+        log.info("GET /api/auth/validate - Intentando validar cuenta con token: {}", token);
+        boolean activated = usuarioServicio.activateUser(token);
+        if (activated) {
+            log.info("Cuenta activada exitosamente para token: {}", token);
+            return ResponseEntity.ok("¡Tu cuenta ha sido activada exitosamente! Ya puedes iniciar sesión.");
+        } else {
+            log.warn("Fallo en la activación de cuenta: token inválido o expirado: {}", token);
+            return ResponseEntity.badRequest().body("Error: Token de activación inválido o expirado.");
+        }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@RequestParam("email") String email) {
+        log.info("POST /api/auth/forgot-password - Solicitud de reseteo de contraseña para email: {}", email);
+        try {
+            usuarioServicio.createPasswordResetTokenForUser(email);
+            log.info("Link de reseteo de contraseña enviado a: {}", email);
+            return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
+        } catch (UsernameNotFoundException e) {
+            log.warn("Intento de reseteo de contraseña para email no registrado: {}", email);
+            // No revelamos si el email existe por seguridad
+            return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
+        } catch (Exception e) {
+            log.error("Error al solicitar reseteo de contraseña para {}: {}", email, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al procesar la solicitud de reseteo de contraseña.");
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@RequestBody PasswordResetRequest request) {
+        log.info("POST /api/auth/reset-password - Intentando restablecer contraseña con token.");
+        Optional<User> userOptional = usuarioServicio.validatePasswordResetToken(request.getToken());
+        if (userOptional.isEmpty()) {
+            log.warn("Intento de reseteo de contraseña con token inválido o expirado.");
+            return ResponseEntity.badRequest().body("Token de restablecimiento de contraseña inválido o expirado.");
+        }
+        User usuario = userOptional.get();
+        usuarioServicio.updatePassword(usuario, encoder.encode(request.getNewPassword()));
+        log.info("Contraseña restablecida exitosamente para usuario: {}", usuario.getUsername());
+        return ResponseEntity.ok("Contraseña restablecida exitosamente.");
+    }
+
+    // Endpoint para validar un token JWT (útil para el frontend al cargar la app)
+    @GetMapping("/validate-token")
+    public ResponseEntity<String> validateJwtToken(@RequestHeader("Authorization") String authorizationHeader) {
+        log.info("GET /api/auth/validate-token - Validando token JWT.");
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            log.warn("Intento de validación de token sin cabecera Authorization válida.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no proporcionado.");
+        }
+        String token = authorizationHeader.substring(7); // Quitar "Bearer "
+
+        if (jwtUtil.validateJwtToken(token)) { // Usar validateJwtToken del JWTUtil
+            log.info("Token JWT válido.");
+            return ResponseEntity.ok("Token JWT válido.");
+        } else {
+            log.warn("Token JWT inválido o expirado.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado.");
         }
     }
 }

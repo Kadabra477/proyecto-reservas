@@ -2,168 +2,151 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.authentication.LockedException;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.UUID; // Necesario para generar token
 
-@RequiredArgsConstructor
 @Service
 public class UsuarioServicio implements UserDetailsService {
 
     private static final Logger log = LoggerFactory.getLogger(UsuarioServicio.class);
 
-    private final UsuarioRepositorio usuarioRepositorio;
-    private final PasswordEncoder passwordEncoder;
+    @Autowired
+    private UsuarioRepositorio usuarioRepositorio;
 
+    @Autowired
+    private EmailService emailService;
+
+    @Override
+    @Transactional(readOnly = true) // Método de solo lectura
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        // Asumo que 'username' es el email o un campo único que se usa para el login
+        log.debug("Intentando cargar usuario por username/email: {}", username);
+        User usuario = usuarioRepositorio.findByUsername(username) // Intenta buscar por username
+                .orElseGet(() -> usuarioRepositorio.findByEmail(username) // Si no lo encuentra por username, intenta por email
+                        .orElseThrow(() -> {
+                            log.warn("Usuario no encontrado con username o email: {}", username);
+                            return new UsernameNotFoundException("Usuario no encontrado: " + username);
+                        }));
+        log.debug("Usuario {} cargado exitosamente. Habilitado: {}", usuario.getUsername(), usuario.isEnabled());
+        return usuario; // Retorna el objeto User, que implementa UserDetails
+    }
+
+    @Transactional(readOnly = true)
     public Optional<User> findByUsername(String username) {
+        log.debug("Buscando usuario por username: {}", username);
         return usuarioRepositorio.findByUsername(username);
     }
 
-    @Transactional
-    public void guardarUsuario(User usuario) {
-        usuarioRepositorio.save(usuario);
-        log.info("Usuario guardado: {}", usuario.getUsername());
+    @Transactional(readOnly = true)
+    public Optional<User> findByEmail(String email) {
+        log.debug("Buscando usuario por email: {}", email);
+        return usuarioRepositorio.findByEmail(email);
     }
 
     @Transactional
-    public User guardarUsuarioConRetorno(User usuario) {
-        User savedUser = usuarioRepositorio.save(usuario);
-        log.info("Usuario guardado con retorno: {}", savedUser.getUsername());
+    public User save(User user) {
+        log.info("Guardando usuario: {}", user.getUsername());
+        return usuarioRepositorio.save(user);
+    }
+
+    // Método para registrar un nuevo usuario (ahora con el nuevo modelo User.java)
+    @Transactional
+    public User registerNewUser(User user) {
+        // Asegurarse de que el usuario no esté habilitado por defecto y generar token de verificación
+        user.setEnabled(false); // Campo 'enabled' en el nuevo User.java
+        user.setVerificationToken(UUID.randomUUID().toString()); // Campo 'verificationToken' en el nuevo User.java
+        // Por defecto, completoPerfil puede ser false al registrar
+        if (user.getCompletoPerfil() == null) {
+            user.setCompletoPerfil(false);
+        }
+
+        User savedUser = usuarioRepositorio.save(user);
+        log.info("Usuario registrado y guardado: {}", savedUser.getUsername());
+
+        // Enviar email de validación
+        emailService.sendValidationEmail(savedUser.getEmail(), savedUser.getVerificationToken());
+        log.info("Email de validación enviado a {}", savedUser.getEmail());
         return savedUser;
     }
 
+    // Método para activar cuenta (verificación de email)
     @Transactional
-    public boolean validateUser(String token) {
-        Optional<User> userOpt = usuarioRepositorio.findByValidationToken(token);
-        if (userOpt.isPresent()) {
-            User usuario = userOpt.get();
-            if (Boolean.TRUE.equals(usuario.getActive())) {
-                log.info("Cuenta ya activa para token {}, limpiando token.", token);
-                usuario.setValidationToken(null);
-                usuarioRepositorio.save(usuario);
-                return true;
+    public boolean activateUser(String token) {
+        log.info("Intentando activar usuario con token: {}", token);
+        Optional<User> userOptional = usuarioRepositorio.findByVerificationToken(token);
+        if (userOptional.isPresent()) {
+            User usuario = userOptional.get();
+            // Verificar si la cuenta ya está activada
+            if (usuario.isEnabled()) { // Usar .isEnabled() del modelo User
+                log.warn("Usuario con token {} ya estaba activado.", token);
+                return true; // Considerar ya activado si enabled es true
             }
-            usuario.setActive(true);
-            usuario.setValidationToken(null);
+            usuario.setEnabled(true); // Cambiar enabled a true
+            usuario.setVerificationToken(null); // Borrar el token de verificación
             usuarioRepositorio.save(usuario);
-            log.info("Cuenta activada para usuario: {}", usuario.getUsername());
+            log.info("Usuario {} activado exitosamente.", usuario.getUsername());
             return true;
         }
-        log.warn("Token de validación no encontrado: {}", token);
+        log.warn("Token de activación no encontrado o inválido: {}", token);
         return false;
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User usuario = usuarioRepositorio.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con email: " + username));
-
-        if (!Boolean.TRUE.equals(usuario.getActive())) {
-            log.warn("Intento de login denegado - cuenta inactiva: {}", username);
-            throw new LockedException("La cuenta no está activa. Por favor, valida tu correo electrónico.");
-        }
-
-        List<SimpleGrantedAuthority> authorities = List.of(
-                new SimpleGrantedAuthority("ROLE_" + usuario.getRol()));
-
-        return new org.springframework.security.core.userdetails.User(
-                usuario.getUsername(),
-                usuario.getPassword(),
-                authorities);
-    }
-
+    // Método para generar y enviar token de reseteo de contraseña
     @Transactional
-    public String createPasswordResetToken(String userEmail) {
-        Optional<User> userOpt = usuarioRepositorio.findByUsername(userEmail);
-        if (userOpt.isEmpty()) {
-            log.warn("Solicitud de reseteo para email no encontrado: {}", userEmail);
-            return null;
+    public void createPasswordResetTokenForUser(String email) {
+        log.info("Creando token de reseteo de contraseña para email: {}", email);
+        Optional<User> userOptional = usuarioRepositorio.findByEmail(email);
+        if (userOptional.isEmpty()) {
+            log.warn("Usuario no encontrado para reseteo de contraseña: {}", email);
+            throw new UsernameNotFoundException("Usuario no encontrado con email: " + email);
         }
-        User usuario = userOpt.get();
+        User usuario = userOptional.get();
         String token = UUID.randomUUID().toString();
-        LocalDateTime expiryDate = LocalDateTime.now().plusHours(1);
-        usuario.setPasswordResetToken(token);
-        usuario.setPasswordResetTokenExpiry(expiryDate);
+        usuario.setResetPasswordToken(token); // Usar setResetPasswordToken
+        usuario.setResetPasswordTokenExpiryDate(LocalDateTime.now().plusHours(1)); // Usar setResetPasswordTokenExpiryDate
         usuarioRepositorio.save(usuario);
-        log.info("Token de reseteo creado para usuario: {}", userEmail);
-        return token;
+        emailService.sendPasswordResetEmail(usuario.getEmail(), token);
+        log.info("Email de reseteo de contraseña enviado a: {}", email);
     }
 
+    // Método para validar token de reseteo y cambiar contraseña
     @Transactional
-    public boolean resetPassword(String token, String newPassword) {
-        Optional<User> userOpt = usuarioRepositorio.findByPasswordResetToken(token);
-        if (userOpt.isEmpty()) {
-            log.warn("Intento de reseteo con token inválido: {}", token);
-            return false;
+    public Optional<User> validatePasswordResetToken(String token) {
+        log.debug("Validando token de reseteo: {}", token);
+        Optional<User> userOptional = usuarioRepositorio.findByResetPasswordToken(token);
+        if (userOptional.isPresent()) {
+            User usuario = userOptional.get();
+            // Verificar expiración del token
+            if (usuario.getResetPasswordTokenExpiryDate() != null && usuario.getResetPasswordTokenExpiryDate().isAfter(LocalDateTime.now())) {
+                log.info("Token de reseteo {} válido para usuario {}", token, usuario.getUsername());
+                return Optional.of(usuario);
+            } else {
+                log.warn("Token de reseteo {} expirado o inválido para usuario {}", token, usuario.getUsername());
+            }
+        } else {
+            log.warn("Token de reseteo {} no encontrado.", token);
         }
-        User usuario = userOpt.get();
-
-        if (usuario.getPasswordResetTokenExpiry() == null || usuario.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
-            log.warn("Intento de reseteo con token expirado para usuario: {}", usuario.getUsername());
-            usuario.setPasswordResetToken(null);
-            usuario.setPasswordResetTokenExpiry(null);
-            usuarioRepositorio.save(usuario);
-            return false;
-        }
-
-        if (newPassword == null || newPassword.length() < 6) {
-            log.warn("Intento de reseteo con contraseña inválida para usuario: {}", usuario.getUsername());
-            return false;
-        }
-
-        usuario.setPassword(passwordEncoder.encode(newPassword));
-        usuario.setPasswordResetToken(null);
-        usuario.setPasswordResetTokenExpiry(null);
-        usuarioRepositorio.save(usuario);
-        log.info("Contraseña reseteada exitosamente para usuario: {}", usuario.getUsername());
-        return true;
+        return Optional.empty();
     }
 
-    // --- Métodos para el perfil ---
-
-    @Transactional(readOnly = true)
-    public Optional<User> getUserProfileByEmail(String email) {
-        return usuarioRepositorio.findByUsername(email);
-    }
-
+    // Método para actualizar contraseña
     @Transactional
-    public User updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
-        // En tu DTO, PerfilDTO, no estás enviando 'email' o 'profilePictureUrl' para actualizar aquí,
-        // solo se usan para mostrar. Si el frontend puede cambiar email/foto desde aquí, se necesitaría lógica adicional.
-        // Asumiendo que solo se actualizan los campos que vienen en el DTO.
-        if (nombreCompleto != null) {
-            user.setNombreCompleto(nombreCompleto);
-        }
-        if (ubicacion != null) {
-            user.setUbicacion(ubicacion);
-        }
-        // Importante: si 'edad' puede venir como 0 (un valor válido), el 'if (edad != null)' está bien.
-        // Si 0 en el frontend significa "no especificado", entonces el frontend debería enviar null.
-        user.setEdad(edad);
-        if (bio != null) {
-            user.setBio(bio);
-        }
-        user.setCompletoPerfil(true); // Una vez que edita, se asume que completa
-        return usuarioRepositorio.save(user);
-    }
-
-    @Transactional
-    public User updateProfilePictureUrl(User user, String profilePictureUrl) {
-        user.setProfilePictureUrl(profilePictureUrl);
-        return usuarioRepositorio.save(user);
+    public void updatePassword(User user, String newPassword) {
+        log.info("Actualizando contraseña para usuario: {}", user.getUsername());
+        user.setPassword(newPassword);
+        user.setResetPasswordToken(null); // Limpiar token de reseteo
+        user.setResetPasswordTokenExpiryDate(null); // Limpiar fecha de expiración
+        usuarioRepositorio.save(user);
+        log.info("Contraseña actualizada exitosamente para usuario {}", user.getUsername());
     }
 }
