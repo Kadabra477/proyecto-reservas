@@ -1,9 +1,9 @@
 package com.example.reservafutbol.DTO;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data; // Importa @Data
 import lombok.NoArgsConstructor;
-import lombok.Setter;
+
 import com.example.reservafutbol.Modelo.Reserva; // Importa la entidad Reserva
 import com.example.reservafutbol.Modelo.Complejo; // Importa la entidad Complejo
 
@@ -13,10 +13,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
+@Data // Incluye @Getter, @Setter, @ToString, @EqualsAndHashCode
+@NoArgsConstructor // Mantén este para el constructor sin argumentos
+@AllArgsConstructor // Mantén este para el constructor con todos los argumentos (si lo usas explícitamente)
 public class ReservaDetalleDTO {
     private Long id;
     private String userEmail;
@@ -26,14 +25,12 @@ public class ReservaDetalleDTO {
     private String complejoNombre; // Nombre del complejo
     private String complejoUbicacion; // Ubicación del complejo
 
-    private String tipoCanchaReservada; // Nuevo: Tipo de cancha que se reservó
-    private String nombreCanchaAsignada; // Nombre de la cancha asignada internamente por el sistema (ej. "Fútbol 5 - Instancia 3")
+    private String tipoCanchaReservada; // Tipo de cancha que se reservó
+    private String nombreCanchaAsignada; // Nombre de la cancha asignada internamente por el sistema
 
     private String cliente;
     private String telefono;
     private LocalDateTime fechaHora;
-    // ELIMINADO: Ya no se usa el booleano 'confirmada' directamente en el DTO si el estado es la fuente de verdad
-    // private Boolean confirmada;
     private BigDecimal precioTotal;
     private Boolean pagada;
     private String estado;
@@ -43,6 +40,7 @@ public class ReservaDetalleDTO {
     private Set<String> equipo1;
     private Set<String> equipo2;
 
+    // Constructor personalizado para mapear desde la entidad Reserva
     public ReservaDetalleDTO(Reserva reserva) {
         this.id = reserva.getId();
         this.userEmail = reserva.getUserEmail();
@@ -53,12 +51,11 @@ public class ReservaDetalleDTO {
         this.complejoUbicacion = reserva.getComplejo() != null ? reserva.getComplejo().getUbicacion() : "N/A";
 
         this.tipoCanchaReservada = reserva.getTipoCanchaReservada();
-        this.nombreCanchaAsignada = reserva.getNombreCanchaAsignada(); // Se asigna el nombre interno
+        this.nombreCanchaAsignada = reserva.getNombreCanchaAsignada();
 
         this.cliente = reserva.getCliente();
         this.telefono = reserva.getTelefono();
         this.fechaHora = reserva.getFechaHora();
-        // this.confirmada = reserva.getConfirmada(); // ELIMINADO
         this.precioTotal = reserva.getPrecio();
         this.pagada = reserva.getPagada();
         this.estado = reserva.getEstado();
