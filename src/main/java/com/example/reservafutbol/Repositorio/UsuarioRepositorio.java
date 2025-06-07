@@ -8,14 +8,16 @@ import java.util.Optional;
 
 @Repository
 public interface UsuarioRepositorio extends JpaRepository<User, Long> {
-    // Métodos esenciales para el login y registro
-    Optional<User> findByUsername(String username); // Para buscar por username (ej. para login)
-    Boolean existsByUsername(String username); // Para verificar si un username ya existe
+    // findByUsername ahora buscará por el correo electrónico (que es el username)
+    Optional<User> findByUsername(String username);
+    // existsByUsername ahora verificará si el correo electrónico (username) ya existe
+    Boolean existsByUsername(String username);
 
-    Optional<User> findByEmail(String email); // Para buscar por email (ej. para reseteo de contraseña)
-    Boolean existsByEmail(String email); // Para verificar si un email ya existe
+    // ELIMINADOS: findByEmail y existsByEmail ya no son necesarios si username es el email.
+    // Optional<User> findByEmail(String email);
+    // Boolean existsByEmail(String email);
 
-    // Métodos para verificación de cuenta y reseteo de contraseña (basados en el modelo User.java)
-    Optional<User> findByVerificationToken(String token); // Para activar cuenta con token de verificación
-    Optional<User> findByResetPasswordToken(String token); // Para validar token de reseteo de contraseña
+    // Métodos para verificación de cuenta y reseteo de contraseña (se mantienen)
+    Optional<User> findByVerificationToken(String token);
+    Optional<User> findByResetPasswordToken(String token);
 }

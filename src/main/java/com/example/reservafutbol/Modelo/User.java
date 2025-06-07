@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
-import lombok.Builder; // Asegúrate de importar Builder si usas @Builder
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -20,79 +20,77 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Entity
-@Table(name = "users", // Renombrado a 'users' por convención y para evitar conflictos con 'usuarios'
+@Table(name = "users",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = "username"), // Si 'username' es para login
-                @UniqueConstraint(columnNames = "email") // Si 'email' es distinto de username
+                @UniqueConstraint(columnNames = "username") // username (que ahora es el email) debe ser único
         })
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder // Se mantiene @Builder si quieres usar el patrón Builder
-public class User implements UserDetails { // Implementa UserDetails, ¡CRÍTICO para Spring Security!
+@Builder
+public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // --- Campos de Autenticación Básicos ---
-    @NotBlank(message = "El nombre de usuario es obligatorio")
-    @Size(max = 20, message = "El nombre de usuario no puede exceder los 20 caracteres")
+    // --- CAMBIO CRÍTICO: username ahora almacena el email ---
+    @NotBlank(message = "El correo electrónico es obligatorio")
+    @Size(max = 50, message = "El correo electrónico no puede exceder los 50 caracteres")
+    @Email(message = "Formato de correo electrónico inválido")
     @Column(nullable = false, unique = true)
-    private String username; // Este es el campo que Spring Security usará para el login
+    private String username; // Este campo ahora es el EMAIL y se usa para el login y contacto
 
-    @NotBlank(message = "El email es obligatorio")
-    @Size(max = 50, message = "El email no puede exceder los 50 caracteres")
-    @Email(message = "Formato de email inválido")
-    @Column(nullable = false, unique = true)
-    private String email; // El email real del usuario, diferente del username si se desea
+    // ELIMINADO: Ya no necesitamos un campo 'email' separado, ya que 'username' es el email.
+    // private String email;
 
     @NotBlank(message = "La contraseña es obligatoria")
-    @Size(max = 120, message = "La contraseña es demasiado larga (max 120 caracteres)")
+    @Size(min = 6, max = 120, message = "La contraseña es demasiado larga (max 120 caracteres)")
     @Column(nullable = false)
     private String password;
 
-    // --- Campos de Perfil de Usuario ---
+    // --- Campo de Perfil: nombreCompleto (para mostrar) ---
+    @NotBlank(message = "El nombre completo es obligatorio")
     private String nombreCompleto;
 
+    // --- Otros Campos de Perfil (se mantienen) ---
     private String ubicacion;
     private Integer edad;
-    private Boolean completoPerfil = false; // Indica si el usuario ha completado su perfil
-    private String telefono; // Número de teléfono del usuario
+    @Builder.Default
+    private Boolean completoPerfil = false;
+    private String telefono;
+    @Column(columnDefinition = "TEXT")
+    private String bio;
+    private String profilePictureUrl;
 
-    @Column(columnDefinition = "TEXT") // Para almacenar texto más largo
-    private String bio; // Biografía del usuario
-
-    private String profilePictureUrl; // URL de la foto de perfil (ej. en S3)
-
-    // --- Campos para Manejo de Estado y Seguridad (activación, roles, reseteo de password) ---
-    @ManyToMany(fetch = FetchType.EAGER) // Carga los roles inmediatamente con el usuario
-    @JoinTable(name = "user_roles", // Tabla intermedia para la relación ManyToMany
+    // --- Campos para Manejo de Estado y Seguridad (se mantienen) ---
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "user_roles",
             joinColumns = @JoinColumn(name = "user_id"),
             inverseJoinColumns = @JoinColumn(name = "role_id"))
-    private Set<Role> roles = new HashSet<>(); // Uso de Set<Role> para roles, ¡CRÍTICO!
+    private Set<Role> roles = new HashSet<>();
 
-    private boolean enabled = false; // Estado de habilitación de la cuenta (para verificación de email)
-    @Column(length = 36) // Longitud típica para UUIDs
-    private String verificationToken; // Token para verificación de email
+    @Builder.Default
+    private boolean enabled = false;
+    @Column(length = 36)
+    private String verificationToken;
 
     @Column(length = 36)
-    private String resetPasswordToken; // Token para restablecimiento de contraseña
+    private String resetPasswordToken;
 
-    private LocalDateTime resetPasswordTokenExpiryDate; // Fecha de expiración del token de restablecimiento
+    private LocalDateTime resetPasswordTokenExpiryDate;
 
 
-    // Constructor básico para registro
-    public User(String username, String email, String password, String nombreCompleto) {
-        this.username = username;
-        this.email = email;
+    // Constructor básico para registro (adaptado: username es el email)
+    public User(String username, String password, String nombreCompleto) {
+        this.username = username; // username es el email aquí
         this.password = password;
-        this.nombreCompleto = nombreCompleto;
-        this.enabled = false; // Por defecto no habilitado hasta verificar email
+        this.nombreCompleto = nombreCompleto; // nombreCompleto es un campo de perfil
+        this.enabled = false;
     }
 
-    // --- Implementación de la interfaz UserDetails (¡CRÍTICO para Spring Security!) ---
+    // --- Implementación de la interfaz UserDetails (se mantiene) ---
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return this.roles.stream()
@@ -102,31 +100,33 @@ public class User implements UserDetails { // Implementa UserDetails, ¡CRÍTICO
 
     @Override
     public String getUsername() {
-        return username; // Retorna el campo 'username' para Spring Security
+        return username; // Retorna el email del usuario para Spring Security
     }
 
     @Override
     public String getPassword() {
-        return password; // Retorna el campo 'password' para Spring Security
+        return password;
     }
 
     @Override
     public boolean isAccountNonExpired() {
-        return true; // Si no manejas expiración de cuentas, deja en true
+        return true;
     }
 
     @Override
     public boolean isAccountNonLocked() {
-        return true; // Si no manejas bloqueo de cuentas, deja en true
+        return true;
     }
 
     @Override
     public boolean isCredentialsNonExpired() {
-        return true; // Si no manejas expiración de credenciales, deja en true
+        return true;
     }
 
     @Override
     public boolean isEnabled() {
-        return this.enabled; // Retorna el estado de habilitación de la cuenta
+        return this.enabled;
     }
+    // No se necesita getEmail() ya que username es el email.
+    // getNombreCompleto() ya es generado por Lombok.
 }

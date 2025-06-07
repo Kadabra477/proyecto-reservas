@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.UUID; // Necesario para generar token
+import java.util.UUID;
 
 @Service
 public class UsuarioServicio implements UserDetailsService {
@@ -27,31 +27,28 @@ public class UsuarioServicio implements UserDetailsService {
     private EmailService emailService;
 
     @Override
-    @Transactional(readOnly = true) // Método de solo lectura
+    @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // Asumo que 'username' es el email o un campo único que se usa para el login
-        log.debug("Intentando cargar usuario por username/email: {}", username);
-        User usuario = usuarioRepositorio.findByUsername(username) // Intenta buscar por username
-                .orElseGet(() -> usuarioRepositorio.findByEmail(username) // Si no lo encuentra por username, intenta por email
-                        .orElseThrow(() -> {
-                            log.warn("Usuario no encontrado con username o email: {}", username);
-                            return new UsernameNotFoundException("Usuario no encontrado: " + username);
-                        }));
+        // Ahora el 'username' de Spring Security es directamente el email del usuario.
+        log.debug("Intentando cargar usuario por email (username): {}", username);
+        User usuario = usuarioRepositorio.findByUsername(username)
+                .orElseThrow(() -> {
+                    log.warn("Usuario no encontrado con email (username): {}", username);
+                    return new UsernameNotFoundException("Usuario no encontrado: " + username);
+                });
         log.debug("Usuario {} cargado exitosamente. Habilitado: {}", usuario.getUsername(), usuario.isEnabled());
-        return usuario; // Retorna el objeto User, que implementa UserDetails
+        return usuario;
     }
 
+    // findByUsername ahora buscará por el email del usuario (que es el username)
     @Transactional(readOnly = true)
     public Optional<User> findByUsername(String username) {
-        log.debug("Buscando usuario por username: {}", username);
+        log.debug("Buscando usuario por email (username): {}", username);
         return usuarioRepositorio.findByUsername(username);
     }
 
-    @Transactional(readOnly = true)
-    public Optional<User> findByEmail(String email) {
-        log.debug("Buscando usuario por email: {}", email);
-        return usuarioRepositorio.findByEmail(email);
-    }
+    // El método findByEmail ya no es necesario si username es el email.
+    // Si frontend intenta llamarlo, causará un error.
 
     @Transactional
     public User save(User user) {
@@ -59,13 +56,12 @@ public class UsuarioServicio implements UserDetailsService {
         return usuarioRepositorio.save(user);
     }
 
-    // Método para registrar un nuevo usuario (ahora con el nuevo modelo User.java)
+    // Método para registrar un nuevo usuario (adaptado para que username sea el email)
     @Transactional
     public User registerNewUser(User user) {
-        // Asegurarse de que el usuario no esté habilitado por defecto y generar token de verificación
-        user.setEnabled(false); // Campo 'enabled' en el nuevo User.java
-        user.setVerificationToken(UUID.randomUUID().toString()); // Campo 'verificationToken' en el nuevo User.java
-        // Por defecto, completoPerfil puede ser false al registrar
+        // En este punto, `user.getUsername()` ya contiene el email completo que viene del DTO
+        user.setEnabled(false);
+        user.setVerificationToken(UUID.randomUUID().toString());
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
@@ -73,26 +69,24 @@ public class UsuarioServicio implements UserDetailsService {
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario registrado y guardado: {}", savedUser.getUsername());
 
-        // Enviar email de validación
-        emailService.sendValidationEmail(savedUser.getEmail(), savedUser.getVerificationToken());
-        log.info("Email de validación enviado a {}", savedUser.getEmail());
+        // CORRECCIÓN CLAVE: El email de destino es savedUser.getUsername()
+        emailService.sendValidationEmail(savedUser.getUsername(), savedUser.getVerificationToken());
+        log.info("Email de validación enviado a {}", savedUser.getUsername());
         return savedUser;
     }
 
-    // Método para activar cuenta (verificación de email)
     @Transactional
     public boolean activateUser(String token) {
         log.info("Intentando activar usuario con token: {}", token);
         Optional<User> userOptional = usuarioRepositorio.findByVerificationToken(token);
         if (userOptional.isPresent()) {
             User usuario = userOptional.get();
-            // Verificar si la cuenta ya está activada
-            if (usuario.isEnabled()) { // Usar .isEnabled() del modelo User
+            if (usuario.isEnabled()) {
                 log.warn("Usuario con token {} ya estaba activado.", token);
-                return true; // Considerar ya activado si enabled es true
+                return true;
             }
-            usuario.setEnabled(true); // Cambiar enabled a true
-            usuario.setVerificationToken(null); // Borrar el token de verificación
+            usuario.setEnabled(true);
+            usuario.setVerificationToken(null);
             usuarioRepositorio.save(usuario);
             log.info("Usuario {} activado exitosamente.", usuario.getUsername());
             return true;
@@ -101,32 +95,30 @@ public class UsuarioServicio implements UserDetailsService {
         return false;
     }
 
-    // Método para generar y enviar token de reseteo de contraseña
     @Transactional
     public void createPasswordResetTokenForUser(String email) {
-        log.info("Creando token de reseteo de contraseña para email: {}", email);
-        Optional<User> userOptional = usuarioRepositorio.findByEmail(email);
+        log.info("Creando token de reseteo de contraseña para email (username): {}", email);
+        // Buscar por username (que es el email)
+        Optional<User> userOptional = usuarioRepositorio.findByUsername(email);
         if (userOptional.isEmpty()) {
             log.warn("Usuario no encontrado para reseteo de contraseña: {}", email);
             throw new UsernameNotFoundException("Usuario no encontrado con email: " + email);
         }
         User usuario = userOptional.get();
         String token = UUID.randomUUID().toString();
-        usuario.setResetPasswordToken(token); // Usar setResetPasswordToken
-        usuario.setResetPasswordTokenExpiryDate(LocalDateTime.now().plusHours(1)); // Usar setResetPasswordTokenExpiryDate
+        usuario.setResetPasswordToken(token);
+        usuario.setResetPasswordTokenExpiryDate(LocalDateTime.now().plusHours(1));
         usuarioRepositorio.save(usuario);
-        emailService.sendPasswordResetEmail(usuario.getEmail(), token);
+        emailService.sendPasswordResetEmail(usuario.getUsername(), token); // Usar getUsername() como email de destino
         log.info("Email de reseteo de contraseña enviado a: {}", email);
     }
 
-    // Método para validar token de reseteo y cambiar contraseña
     @Transactional
     public Optional<User> validatePasswordResetToken(String token) {
         log.debug("Validando token de reseteo: {}", token);
         Optional<User> userOptional = usuarioRepositorio.findByResetPasswordToken(token);
         if (userOptional.isPresent()) {
             User usuario = userOptional.get();
-            // Verificar expiración del token
             if (usuario.getResetPasswordTokenExpiryDate() != null && usuario.getResetPasswordTokenExpiryDate().isAfter(LocalDateTime.now())) {
                 log.info("Token de reseteo {} válido para usuario {}", token, usuario.getUsername());
                 return Optional.of(usuario);
@@ -139,16 +131,16 @@ public class UsuarioServicio implements UserDetailsService {
         return Optional.empty();
     }
 
-    // Método para actualizar contraseña
     @Transactional
     public void updatePassword(User user, String newPassword) {
         log.info("Actualizando contraseña para usuario: {}", user.getUsername());
         user.setPassword(newPassword);
-        user.setResetPasswordToken(null); // Limpiar token de reseteo
-        user.setResetPasswordTokenExpiryDate(null); // Limpiar fecha de expiración
+        user.setResetPasswordToken(null);
+        user.setResetPasswordTokenExpiryDate(null);
         usuarioRepositorio.save(user);
         log.info("Contraseña actualizada exitosamente para usuario {}", user.getUsername());
     }
+
     @Transactional
     public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
         log.info("Actualizando perfil del usuario: {}", user.getUsername());
@@ -178,6 +170,4 @@ public class UsuarioServicio implements UserDetailsService {
 
         log.info("Foto de perfil actualizada para usuario: {}", user.getUsername());
     }
-
-
 }
