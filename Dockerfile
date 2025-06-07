@@ -1,6 +1,6 @@
 # Build stage
-# CORRECCIÓN FINAL AQUÍ: Usamos una imagen Maven más estándar
-FROM maven:3.9.6-jdk-17 AS build
+# CORRECCIÓN FINAL AQUÍ: Usamos una imagen Maven más genérica y estable
+FROM maven:3-jdk-17 AS build
 WORKDIR /app
 COPY pom.xml .
 COPY src ./src
