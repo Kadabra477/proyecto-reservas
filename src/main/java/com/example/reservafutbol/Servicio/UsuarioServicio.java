@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.mail.MessagingException;
 import java.time.LocalDateTime;
-import java.util.List; // Importar List
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -53,11 +53,11 @@ public class UsuarioServicio implements UserDetailsService {
         return usuarioRepositorio.findById(id);
     }
 
-    // Nuevo método: Listar todos los usuarios (para el AdminPanel)
+    // Nuevo método: Listar todos los usuarios ACTIVOS (para el AdminPanel de gestión de usuarios)
     @Transactional(readOnly = true)
-    public List<User> findAllUsers() {
-        log.info("Listando todos los usuarios.");
-        return usuarioRepositorio.findAll();
+    public List<User> findAllEnabledUsers() {
+        log.info("Listando todos los usuarios habilitados.");
+        return usuarioRepositorio.findAllByEnabled(true);
     }
 
     @Transactional

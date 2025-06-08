@@ -1,8 +1,8 @@
 package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Complejo;
-import com.example.reservafutbol.Modelo.ERole; // Importar ERole
-import com.example.reservafutbol.Modelo.User; // Importar User
+import com.example.reservafutbol.Modelo.ERole;
+import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,8 +10,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -22,27 +24,23 @@ public class ComplejoServicio {
     @Autowired
     private ComplejoRepositorio complejoRepositorio;
 
-    // Inyectar UsuarioServicio para buscar el propietario
     @Autowired
     private UsuarioServicio usuarioServicio;
 
     @Transactional
     public Complejo crearComplejo(Complejo complejo, String propietarioUsername) {
-        log.info("Creando nuevo complejo: {} para propietario: {}", complejo.getNombre(), propietarioUsername);
+        log.info("Creando nuevo complejo (detallado): {} para propietario: {}", complejo.getNombre(), propietarioUsername);
 
         if (complejo.getNombre() == null || complejo.getNombre().isBlank()) {
             throw new IllegalArgumentException("El nombre del complejo es obligatorio.");
         }
-        if (complejo.getHorarioApertura() == null || complejo.getHorarioCierre() == null) {
-            throw new IllegalArgumentException("El horario de apertura y cierre del complejo es obligatorio.");
-        }
+        if (complejo.getHorarioApertura() == null) complejo.setHorarioApertura(LocalTime.of(8, 0));
+        if (complejo.getHorarioCierre() == null) complejo.setHorarioCierre(LocalTime.of(22, 0));
 
-        // Buscar y asignar el propietario (User)
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
-        complejo.setPropietario(propietario); // Asignar el propietario al complejo
+        complejo.setPropietario(propietario);
 
-        // Asegurar que los mapas de canchas se inicialicen si no vienen del frontend
         if (complejo.getCanchaCounts() == null) complejo.setCanchaCounts(new HashMap<>());
         if (complejo.getCanchaPrices() == null) complejo.setCanchaPrices(new HashMap<>());
         if (complejo.getCanchaSurfaces() == null) complejo.setCanchaSurfaces(new HashMap<>());
@@ -52,13 +50,53 @@ public class ComplejoServicio {
         return complejoRepositorio.save(complejo);
     }
 
+    @Transactional
+    public Complejo crearComplejoParaAdmin(String nombreComplejo, String propietarioUsername, Map<String, Integer> canchaCounts) {
+        log.info("ADMIN creando complejo '{}' para propietario '{}' con canchas: {}", nombreComplejo, propietarioUsername, canchaCounts);
+
+        if (nombreComplejo == null || nombreComplejo.isBlank()) {
+            throw new IllegalArgumentException("El nombre del complejo es obligatorio.");
+        }
+        User propietario = usuarioServicio.findByUsername(propietarioUsername)
+                .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
+
+        Complejo nuevoComplejo = new Complejo();
+        nuevoComplejo.setNombre(nombreComplejo);
+        nuevoComplejo.setPropietario(propietario);
+
+        nuevoComplejo.setHorarioApertura(LocalTime.of(8, 0));
+        nuevoComplejo.setHorarioCierre(LocalTime.of(22, 0));
+        nuevoComplejo.setCanchaCounts(canchaCounts != null ? canchaCounts : new HashMap<>());
+        nuevoComplejo.setCanchaPrices(new HashMap<>());
+        nuevoComplejo.setCanchaSurfaces(new HashMap<>());
+        nuevoComplejo.setCanchaIluminacion(new HashMap<>());
+        nuevoComplejo.setCanchaTecho(new HashMap<>());
+
+        for (Map.Entry<String, Integer> entry : nuevoComplejo.getCanchaCounts().entrySet()) {
+            String tipoCancha = entry.getKey();
+            if (!nuevoComplejo.getCanchaPrices().containsKey(tipoCancha)) {
+                nuevoComplejo.getCanchaPrices().put(tipoCancha, 0.0);
+            }
+            if (!nuevoComplejo.getCanchaSurfaces().containsKey(tipoCancha)) {
+                nuevoComplejo.getCanchaSurfaces().put(tipoCancha, "A definir");
+            }
+            if (!nuevoComplejo.getCanchaIluminacion().containsKey(tipoCancha)) {
+                nuevoComplejo.getCanchaIluminacion().put(tipoCancha, false);
+            }
+            if (!nuevoComplejo.getCanchaTecho().containsKey(tipoCancha)) {
+                nuevoComplejo.getCanchaTecho().put(tipoCancha, false);
+            }
+        }
+
+        return complejoRepositorio.save(nuevoComplejo);
+    }
+
     @Transactional(readOnly = true)
     public List<Complejo> listarTodosLosComplejos() {
         log.info("Listando todos los complejos.");
         return complejoRepositorio.findAll();
     }
 
-    // Nuevo método: Listar complejos por propietario
     @Transactional(readOnly = true)
     public List<Complejo> listarComplejosPorPropietario(String propietarioUsername) {
         log.info("Listando complejos para propietario: {}", propietarioUsername);
@@ -74,27 +112,21 @@ public class ComplejoServicio {
     }
 
     @Transactional
-    // Agregamos el username del usuario que intenta actualizar para verificar propiedad
     public Complejo actualizarComplejo(Long id, Complejo complejoDetails, String editorUsername) {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
         Complejo complejoExistente = complejoRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
-        // Obtener el usuario que está intentando actualizar
         User editor = usuarioServicio.findByUsername(editorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario editor no encontrado: " + editorUsername));
 
-        // --- Lógica de Autorización a Nivel de Recurso ---
-        // Un ADMIN puede actualizar cualquier complejo. Un COMPLEX_OWNER solo puede actualizar los suyos.
         if (editor.getRoles().stream().noneMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
-            // Si el editor NO es ADMIN, debe ser el propietario del complejo
             if (complejoExistente.getPropietario() == null || !complejoExistente.getPropietario().getId().equals(editor.getId())) {
                 throw new SecurityException("Acceso denegado: No tienes permisos para actualizar este complejo.");
             }
         }
 
-        // Actualizar campos principales
         complejoExistente.setNombre(complejoDetails.getNombre());
         complejoExistente.setDescripcion(complejoDetails.getDescripcion());
         complejoExistente.setUbicacion(complejoDetails.getUbicacion());
@@ -103,8 +135,6 @@ public class ComplejoServicio {
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
 
-        // Actualizar los mapas de tipos de canchas y sus propiedades
-        // Se utilizan operadores ternarios para asegurar que si viene null, se inicialice a un nuevo HashMap vacío
         complejoExistente.setCanchaCounts(complejoDetails.getCanchaCounts() != null ? complejoDetails.getCanchaCounts() : new HashMap<>());
         complejoExistente.setCanchaPrices(complejoDetails.getCanchaPrices() != null ? complejoDetails.getCanchaPrices() : new HashMap<>());
         complejoExistente.setCanchaSurfaces(complejoDetails.getCanchaSurfaces() != null ? complejoDetails.getCanchaSurfaces() : new HashMap<>());
@@ -115,20 +145,16 @@ public class ComplejoServicio {
     }
 
     @Transactional
-    // Agregamos el username del usuario que intenta eliminar para verificar propiedad
     public void eliminarComplejo(Long id, String eliminadorUsername) {
         log.info("Eliminando complejo con ID: {} por usuario: {}", id, eliminadorUsername);
 
         Complejo complejoExistente = complejoRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
-        // Obtener el usuario que está intentando eliminar
         User eliminador = usuarioServicio.findByUsername(eliminadorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario eliminador no encontrado: " + eliminadorUsername));
 
-        // --- Lógica de Autorización a Nivel de Recurso ---
         if (eliminador.getRoles().stream().noneMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
-            // Si el eliminador NO es ADMIN, debe ser el propietario del complejo
             if (complejoExistente.getPropietario() == null || !complejoExistente.getPropietario().getId().equals(eliminador.getId())) {
                 throw new SecurityException("Acceso denegado: No tienes permisos para eliminar este complejo.");
             }

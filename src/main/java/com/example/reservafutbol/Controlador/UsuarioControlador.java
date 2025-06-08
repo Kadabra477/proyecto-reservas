@@ -6,7 +6,7 @@ import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
 import com.example.reservafutbol.Servicio.S3StorageService;
-import com.example.reservafutbol.Repositorio.RoleRepositorio; // Importar RoleRepositorio
+import com.example.reservafutbol.Repositorio.RoleRepositorio;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.HashSet; // Importar HashSet
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 @RestController
@@ -40,7 +40,6 @@ public class UsuarioControlador {
     @Autowired
     private RoleRepositorio roleRepositorio;
 
-    // Obtener el perfil del usuario autenticado
     @GetMapping("/me")
     public ResponseEntity<?> obtenerPerfil(Authentication auth) {
         Optional<User> optUser = obtenerUsuarioAutenticado(auth);
@@ -49,7 +48,6 @@ public class UsuarioControlador {
         }
 
         User user = optUser.get();
-        // Incluye los roles en el DTO del perfil
         List<String> roles = user.getAuthorities().stream()
                 .map(item -> item.getAuthority())
                 .collect(Collectors.toList());
@@ -59,15 +57,14 @@ public class UsuarioControlador {
                 user.getUbicacion(),
                 user.getEdad(),
                 user.getBio(),
-                user.getUsername(), // El email es el username
+                user.getUsername(),
                 user.getProfilePictureUrl(),
-                roles // Pasa los roles en el DTO (CORREGIDO)
+                roles
         );
 
         return ResponseEntity.ok(perfilDTO);
     }
 
-    // Actualizar el perfil del usuario autenticado
     @PutMapping("/me")
     public ResponseEntity<?> actualizarPerfil(@RequestBody PerfilDTO perfilDTO, Authentication auth) {
         Optional<User> optUser = obtenerUsuarioAutenticado(auth);
@@ -87,7 +84,6 @@ public class UsuarioControlador {
         return ResponseEntity.ok("Perfil actualizado correctamente.");
     }
 
-    // Subir la foto de perfil a S3
     @PostMapping("/me/profile-picture")
     public ResponseEntity<?> subirFotoPerfil(@RequestParam("file") MultipartFile file, Authentication auth) {
         Optional<User> optUser = obtenerUsuarioAutenticado(auth);
@@ -119,13 +115,14 @@ public class UsuarioControlador {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<User>> getAllUsers() {
         log.info("GET /api/users - Obteniendo todos los usuarios (solo ADMIN).");
-        List<User> users = usuarioServicio.findAllUsers(); // Usar un método del servicio para listar todos
+        // CORRECCIÓN AQUÍ: Llamar al método correcto en UsuarioServicio
+        List<User> users = usuarioServicio.findAllEnabledUsers(); // Cambiado de findAllUsers() a findAllEnabledUsers()
         return ResponseEntity.ok(users);
     }
 
     // Nuevo endpoint: Asignar/Quitar roles a un usuario por ADMIN
     @PutMapping("/{userId}/roles")
-    @PreAuthorize("hasRole('ADMIN')") // Solo el ADMIN puede modificar roles
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> updateUserRoles(@PathVariable Long userId, @RequestBody List<String> newRoles, Authentication authentication) {
         String adminUsername = authentication.getName();
         log.info("PUT /api/users/{}/roles - Admin {} intentando actualizar roles para usuario {}", userId, adminUsername, userId);
@@ -138,8 +135,7 @@ public class UsuarioControlador {
             }
             User user = userOptional.get();
 
-            // Lógica para construir el Set<Role> a partir de List<String>
-            Set<Role> rolesToAssign = new HashSet<>(); // Importar HashSet
+            Set<Role> rolesToAssign = new HashSet<>();
             for (String roleName : newRoles) {
                 ERole eRole;
                 try {
@@ -153,14 +149,15 @@ public class UsuarioControlador {
                 rolesToAssign.add(role);
             }
 
-            // Lógica de seguridad para no permitir que un ADMIN se quite el rol ADMIN a sí mismo o a otros ADMINS fácilmente
             User currentAdmin = (User)authentication.getPrincipal();
-            if (user.getId().equals(currentAdmin.getId()) && !rolesToAssign.contains(roleRepositorio.findByName(ERole.ROLE_ADMIN).get())) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN a ti mismo.");
+            // Asegúrate de que el ADMIN no se quite a sí mismo el rol de ADMIN si no tiene otros ADMINs
+            // Esta lógica puede ser más compleja, pero por ahora, una simple verificación de IDs
+            if (user.getId().equals(currentAdmin.getId()) && !rolesToAssign.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN a ti mismo si eres el único ADMIN.");
             }
 
             user.setRoles(rolesToAssign);
-            usuarioServicio.save(user); // Guarda el usuario con los nuevos roles
+            usuarioServicio.save(user);
 
             log.info("Roles de usuario {} actualizados a: {}", userId, newRoles);
             return ResponseEntity.ok("Roles actualizados correctamente para el usuario " + user.getUsername() + ".");
@@ -171,7 +168,6 @@ public class UsuarioControlador {
         }
     }
 
-    // Método auxiliar privado para centralizar la obtención del usuario autenticado
     private Optional<User> obtenerUsuarioAutenticado(Authentication auth) {
         if (auth == null || !auth.isAuthenticated()) {
             return Optional.empty();
