@@ -40,21 +40,23 @@ public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     private final JWTUtil jwtUtil;
-    private final UsuarioServicio usuarioServicio; // Inyectar UsuarioServicio aquí
+    private final UsuarioServicio usuarioServicio;
 
     @Value("${frontend.url}")
     private String frontendUrl;
 
-    // Constructor que ahora recibe UsuarioServicio
+    // Inyecta la variable de entorno BACKEND_URL_BASE
+    @Value("${BACKEND_URL_BASE}")
+    private String backendUrlBase; // Para la URL del backend sin /api
+
     public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
         this.jwtUtil = jwtUtil;
-        this.usuarioServicio = usuarioServicio; // Asignar al campo
+        this.usuarioServicio = usuarioServicio;
         log.info("SecurityConfig initialized with JWTUtil and UsuarioServicio.");
     }
 
     @Bean
     public JWTAuthenticationFilter authenticationJwtTokenFilter() {
-        // Ahora el filtro se construye con UsuarioServicio
         return new JWTAuthenticationFilter(jwtUtil, usuarioServicio);
     }
 
@@ -76,7 +78,7 @@ public class SecurityConfig {
                     }
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // Rutas públicas
+                        // Rutas públicas que no requieren autenticación
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
@@ -85,8 +87,9 @@ public class SecurityConfig {
                                 "/error", "/error-404"
                         ).permitAll()
 
-                        // Rutas públicas de Complejos y disponibilidad de reservas
+                        // ¡CLAVE! Rutas para Complejos - Obtener todos y por ID DEBEN SER públicos
                         .requestMatchers(HttpMethod.GET, "/api/complejos", "/api/complejos/**").permitAll()
+                        // El endpoint de disponibilidad por tipo de cancha es público
                         .requestMatchers(HttpMethod.GET, "/api/reservas/disponibilidad-por-tipo").permitAll()
 
                         // Rutas protegidas que requieren autenticación
@@ -115,9 +118,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/reservas/{id}/equipos").hasRole("ADMIN")
                         .requestMatchers("/api/reservas/{id}").hasRole("ADMIN")
 
-                        .anyRequest().authenticated()
+                        .anyRequest().authenticated() // Cualquier otra petición requiere autenticación
                 )
-                .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class) // Usa el bean del filtro
+                .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class)
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oAuth2AuthenticationSuccessHandler())
                         .failureHandler((request, response, exception) -> {
@@ -133,7 +136,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(frontendUrl, "https://proyecto-reservas-jsw5.onrender.com", "http://localhost:3000"));
+        config.setAllowedOrigins(List.of(frontendUrl, backendUrlBase, "http://localhost:3000")); // Añadido backendUrlBase
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         config.setAllowCredentials(true);
@@ -158,9 +161,9 @@ public class SecurityConfig {
             log.info("OAuth2 authentication success handler triggered.");
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
-                String email = oauthUser.getAttribute("email");
-                String nombreCompleto = oauthUser.getAttribute("name");
-                String role = authentication.getAuthorities().stream() // Obtiene el rol directamente de authentication
+                String email = oauthUser.getAttribute("email"); // Email del OAuth2
+                String nombreCompleto = oauthUser.getAttribute("name"); // Nombre del OAuth2
+                String role = authentication.getAuthorities().stream()
                         .map(GrantedAuthority::getAuthority)
                         .filter(a -> a.startsWith("ROLE_"))
                         .map(a -> a.substring(5))
@@ -174,12 +177,13 @@ public class SecurityConfig {
                 }
 
                 try {
-                    // Usar generateTokenFromEmail que ahora toma nombreCompleto y role
+                    // Usar generateTokenFromEmail que ahora toma email (username), nombreCompleto y role
                     String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
+                    // La URL del redirect debe usar backendUrlBase (sin /api)
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
-                    targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8); // Asegurar no null
-                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
+                    targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
+                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8); // username aquí es el email
                     targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
