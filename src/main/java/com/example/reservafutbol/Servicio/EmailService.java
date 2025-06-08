@@ -1,133 +1,111 @@
 package com.example.reservafutbol.Servicio;
 
-import com.example.reservafutbol.Modelo.Reserva;
-import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.InputStreamSource;
-import org.springframework.mail.SimpleMailMessage;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Value;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
-import java.text.NumberFormat;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
+import com.example.reservafutbol.Modelo.Reserva; // Asegúrate de importar Reserva si la usas aquí
+import com.example.reservafutbol.Modelo.User;    // Asegúrate de importar User si la usas aquí
+
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 
 @Service
 public class EmailService {
 
-    private static final Logger log = LoggerFactory.getLogger(EmailService.class);
-
-    @Value("${backend.url}")
-    private String backendUrl;
-
-    @Value("${frontend.url}")
-    private String frontendUrl;
-
     @Autowired
     private JavaMailSender mailSender;
 
-    public void sendValidationEmail(String to, String token) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setTo(to);
-            message.setSubject("Valida tu cuenta en ¿Dónde Juego?");
+    // Inyecta el email FROM configurado en application.properties (o variables de entorno)
+    @Value("${spring.mail.properties.mail.smtp.from}")
+    private String fromEmail;
 
-            String validationUrl = backendUrl + "/api/auth/validate?token=" + token;
-            message.setText("¡Gracias por registrarte en ¿Dónde Juego?!\n\n" +
-                    "Por favor, haz clic en el siguiente enlace para activar tu cuenta:\n" +
-                    validationUrl + "\n\n" +
-                    "Si no te registraste, ignora este mensaje.\n\n" +
-                    "Saludos,\nEl equipo de ¿Dónde Juego?");
-            mailSender.send(message);
-            log.info("Email de validación enviado a: {}", to);
-        } catch (Exception e) {
-            log.error("Error al enviar email de validación a {}: {}", to, e.getMessage(), e);
-        }
+    // Método para enviar email de verificación de cuenta
+    public void sendVerificationEmail(String to, String username, String verificationToken) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setFrom(fromEmail); // Usa la dirección de remitente configurada
+        helper.setTo(to);
+        helper.setSubject("Verifica tu cuenta en ReservaFutbol");
+
+        // Construye el enlace de verificación
+        // Asegúrate de que tu frontend.url esté configurada correctamente en application.properties/Render
+        // y apunte a tu frontend desplegado (ej. https://proyecto-reservas-frontend.vercel.app)
+        String verificationLink = "https://proyecto-reservas-frontend.vercel.app" + "/verify-account?token=" + verificationToken; // Ajusta la URL de tu frontend
+
+        String emailContent = "<html><body>"
+                + "<h2>¡Hola, " + username + "!</h2>"
+                + "<p>Gracias por registrarte en ReservaFutbol.</p>"
+                + "<p>Para activar tu cuenta, por favor haz clic en el siguiente enlace:</p>"
+                + "<p><a href=\"" + verificationLink + "\">Verificar mi cuenta</a></p>"
+                + "<p>Si no te registraste en nuestro sitio, por favor ignora este correo.</p>"
+                + "<p>Saludos cordiales,<br/>El equipo de ReservaFutbol</p>"
+                + "</body></html>";
+        helper.setText(emailContent, true); // true para HTML
+
+        mailSender.send(message);
+        System.out.println("Email de verificación enviado a: " + to);
     }
 
-    public void sendPasswordResetEmail(String to, String token) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setTo(to);
-            message.setSubject("Restablecer tu contraseña en ¿Dónde Juego?");
+    // Método para enviar email de recuperación de contraseña
+    public void sendPasswordResetEmail(String to, String resetToken) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            String resetUrl = frontendUrl + "/reset-password?token=" + token;
+        helper.setFrom(fromEmail);
+        helper.setTo(to);
+        helper.setSubject("Restablecer tu contraseña de ReservaFutbol");
 
-            message.setText("Hola,\n\n" +
-                    "Recibimos una solicitud para restablecer tu contraseña. Haz clic en el siguiente enlace:\n" +
-                    resetUrl + "\n\n" +
-                    "Este enlace expirará en 1 hora.\n\n" +
-                    "Si no solicitaste esto, puedes ignorar este mensaje.\n\n" +
-                    "Saludos,\nEl equipo de ¿Dónde Juego?");
-            mailSender.send(message);
-            log.info("Email de reseteo de contraseña enviado a: {}", to);
-        } catch (Exception e) {
-            log.error("Error al enviar email de reseteo a {}: {}", to, e.getMessage(), e);
-        }
+        String resetLink = "https://proyecto-reservas-frontend.vercel.app" + "/reset-password?token=" + resetToken; // Ajusta la URL de tu frontend
+
+        String emailContent = "<html><body>"
+                + "<h2>Hola,</h2>"
+                + "<p>Has solicitado restablecer tu contraseña en ReservaFutbol.</p>"
+                + "<p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>"
+                + "<p><a href=\"" + resetLink + "\">Restablecer Contraseña</a></p>"
+                + "<p>Este enlace expirará en 15 minutos.</p>"
+                + "<p>Si no solicitaste un restablecimiento de contraseña, por favor ignora este correo.</p>"
+                + "<p>Saludos cordiales,<br/>El equipo de ReservaFutbol</p>"
+                + "</body></html>";
+        helper.setText(emailContent, true);
+
+        mailSender.send(message);
+        System.out.println("Email de restablecimiento de contraseña enviado a: " + to);
     }
 
-    public void enviarComprobanteConPDF(String to, ByteArrayInputStream pdfBytes) {
-        try {
-            MimeMessage mensaje = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true);
+    // Método para enviar notificaciones de nueva reserva (para administradores/dueños)
+    public void sendNewReservationNotification(Reserva reserva, String toEmail) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            helper.setTo(to);
-            helper.setSubject("Comprobante de reserva de cancha");
-            helper.setText("Hola! Te adjuntamos el comprobante de tu reserva. Mostralo al llegar. ¡Gracias por reservar!");
+        helper.setFrom(fromEmail);
+        helper.setTo(toEmail);
+        helper.setSubject("Nueva Reserva en " + reserva.getComplejo().getNombre());
 
-            InputStreamSource adjunto = new ByteArrayResource(pdfBytes.readAllBytes());
-            helper.addAttachment("comprobante_reserva.pdf", adjunto);
+        String emailContent = "<html><body>"
+                + "<h2>¡Nueva Reserva Realizada!</h2>"
+                + "<p>Se ha realizado una nueva reserva para tu complejo:</p>"
+                + "<ul>"
+                + "<li><strong>Complejo:</strong> " + reserva.getComplejo().getNombre() + "</li>"
+                + "<li><strong>Tipo de Cancha:</strong> " + reserva.getTipoCanchaReservada() + "</li>"
+                + "<li><strong>Fecha y Hora:</strong> " + reserva.getFechaHora().toString() + "</li>"
+                + "<li><strong>Cliente:</strong> " + reserva.getCliente() + "</li>"
+                + "<li><strong>Teléfono:</strong> " + reserva.getTelefono() + "</li>"
+                + "<li><strong>DNI:</strong> " + reserva.getDni() + "</li>"
+                + "<li><strong>Método de Pago:</strong> " + reserva.getMetodoPago() + "</li>"
+                + "<li><strong>Precio:</strong> $" + reserva.getPrecio().toString() + "</li>"
+                + "</ul>"
+                + "<p>Por favor, revisa el panel de administración para más detalles.</p>"
+                + "<p>Saludos,<br/>El equipo de ReservaFutbol</p>"
+                + "</body></html>";
+        helper.setText(emailContent, true);
 
-            mailSender.send(mensaje);
-            log.info("Comprobante enviado por email a: {}", to);
-        } catch (Exception e) {
-            log.error("Error al enviar comprobante PDF a {}: {}", to, e.getMessage(), e);
-        }
+        mailSender.send(message);
+        System.out.println("Notificación de nueva reserva enviada a: " + toEmail);
     }
 
-    // MODIFICADO: Enviar notificación de nueva reserva al administrador con datos del Complejo
-    public void sendNewReservationNotification(Reserva reserva, String adminEmailAddress) {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
-
-            helper.setTo(adminEmailAddress);
-            helper.setSubject("¡Nueva Reserva Recibida en ¿Dónde Juego?! - ID: " + reserva.getId());
-
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-            NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(new Locale("es", "AR"));
-
-            String htmlContent = "<html><body>"
-                    + "<h2>¡Nueva Reserva Recibida!</h2>"
-                    + "<p>Se ha realizado una nueva reserva a través de tu plataforma:</p>"
-                    + "<ul>"
-                    + "<li><strong>ID de Reserva:</strong> " + reserva.getId() + "</li>"
-                    + "<li><strong>Complejo:</strong> " + (reserva.getComplejo() != null ? reserva.getComplejo().getNombre() : "N/A") + "</li>"
-                    + "<li><strong>Tipo de Cancha:</strong> " + reserva.getTipoCanchaReservada() + "</li>"
-                    + "<li><strong>Cancha Asignada:</strong> " + (reserva.getNombreCanchaAsignada() != null ? reserva.getNombreCanchaAsignada() : "Asignación interna") + "</li>"
-                    + "<li><strong>Fecha y Hora:</strong> " + reserva.getFechaHora().format(formatter) + "</li>"
-                    + "<li><strong>Cliente:</strong> " + reserva.getCliente() + "</li>"
-                    + "<li><strong>Email Cliente:</strong> " + reserva.getUserEmail() + "</li>"
-                    + "<li><strong>Teléfono Cliente:</strong> " + (reserva.getTelefono() != null ? reserva.getTelefono() : "N/A") + "</li>"
-                    + "<li><strong>Precio Total:</strong> " + (reserva.getPrecio() != null ? currencyFormatter.format(reserva.getPrecio()) : "N/A") + "</li>"
-                    + "<li><strong>Método de Pago:</strong> " + (reserva.getMetodoPago() != null ? reserva.getMetodoPago() : "N/A") + "</li>"
-                    + "<li><strong>Estado Actual:</strong> " + (reserva.getEstado() != null ? reserva.getEstado() : "N/A") + "</li>"
-                    + "</ul>"
-                    + "<p>Por favor, revisa la reserva en tu panel de administración.</p>"
-                    + "<p>Saludos,<br/>El equipo de ¿Dónde Juego?</p>"
-                    + "</body></html>";
-
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
-            log.info("Notificación de nueva reserva enviada a: {}", adminEmailAddress);
-        } catch (Exception e) {
-            log.error("Error al enviar email de notificación de nueva reserva al administrador {}: {}", adminEmailAddress, e.getMessage(), e);
-        }
-    }
+    // Otros métodos de correo (ej. confirmación al usuario, etc.)
 }

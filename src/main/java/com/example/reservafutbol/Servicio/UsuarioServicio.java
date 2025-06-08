@@ -29,7 +29,6 @@ public class UsuarioServicio implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // Ahora el 'username' de Spring Security es directamente el email del usuario.
         log.debug("Intentando cargar usuario por email (username): {}", username);
         User usuario = usuarioRepositorio.findByUsername(username)
                 .orElseThrow(() -> {
@@ -40,15 +39,11 @@ public class UsuarioServicio implements UserDetailsService {
         return usuario;
     }
 
-    // findByUsername ahora buscará por el email del usuario (que es el username)
     @Transactional(readOnly = true)
     public Optional<User> findByUsername(String username) {
         log.debug("Buscando usuario por email (username): {}", username);
         return usuarioRepositorio.findByUsername(username);
     }
-
-    // El método findByEmail ya no es necesario si username es el email.
-    // Si frontend intenta llamarlo, causará un error.
 
     @Transactional
     public User save(User user) {
@@ -59,7 +54,6 @@ public class UsuarioServicio implements UserDetailsService {
     // Método para registrar un nuevo usuario (adaptado para que username sea el email)
     @Transactional
     public User registerNewUser(User user) {
-        // En este punto, `user.getUsername()` ya contiene el email completo que viene del DTO
         user.setEnabled(false);
         user.setVerificationToken(UUID.randomUUID().toString());
         if (user.getCompletoPerfil() == null) {
@@ -69,9 +63,15 @@ public class UsuarioServicio implements UserDetailsService {
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario registrado y guardado: {}", savedUser.getUsername());
 
-        // CORRECCIÓN CLAVE: El email de destino es savedUser.getUsername()
-        emailService.sendValidationEmail(savedUser.getUsername(), savedUser.getVerificationToken());
-        log.info("Email de validación enviado a {}", savedUser.getUsername());
+        // CORRECCIÓN CLAVE AQUÍ: Pasar savedUser.getNombreCompleto() como segundo argumento
+        try {
+            emailService.sendVerificationEmail(savedUser.getUsername(), savedUser.getNombreCompleto(), savedUser.getVerificationToken());
+            log.info("Email de validación enviado a {}", savedUser.getUsername());
+        } catch (jakarta.mail.MessagingException e) {
+            log.error("Error al enviar email de verificación a {}: {}", savedUser.getUsername(), e.getMessage());
+            // Considera lanzar una excepción o manejar el error de forma adecuada
+            // throw new RuntimeException("Fallo al enviar el email de verificación", e);
+        }
         return savedUser;
     }
 
@@ -98,20 +98,25 @@ public class UsuarioServicio implements UserDetailsService {
     @Transactional
     public void createPasswordResetTokenForUser(String email) {
         log.info("Creando token de reseteo de contraseña para email (username): {}", email);
-        // Buscar por username (que es el email)
-        Optional<User> userOptional = usuarioRepositorio.findByUsername(email);
-        if (userOptional.isEmpty()) {
-            log.warn("Usuario no encontrado para reseteo de contraseña: {}", email);
-            throw new UsernameNotFoundException("Usuario no encontrado con email: " + email);
-        }
-        User usuario = userOptional.get();
+        User user = usuarioRepositorio.findByUsername(email)
+                .orElseThrow(() -> {
+                    log.warn("Usuario no encontrado para reseteo de contraseña: {}", email);
+                    return new UsernameNotFoundException("Usuario no encontrado con email: " + email);
+                });
         String token = UUID.randomUUID().toString();
-        usuario.setResetPasswordToken(token);
-        usuario.setResetPasswordTokenExpiryDate(LocalDateTime.now().plusHours(1));
-        usuarioRepositorio.save(usuario);
-        emailService.sendPasswordResetEmail(usuario.getUsername(), token); // Usar getUsername() como email de destino
-        log.info("Email de reseteo de contraseña enviado a: {}", email);
+        user.setResetPasswordToken(token);
+        user.setResetPasswordTokenExpiryDate(LocalDateTime.now().plusHours(1)); // Token válido por 1 hora
+        usuarioRepositorio.save(user);
+        try {
+            emailService.sendPasswordResetEmail(user.getUsername(), token); // Usar getUsername() como email de destino
+            log.info("Email de reseteo de contraseña enviado a: {}", email);
+        } catch (jakarta.mail.MessagingException e) {
+            log.error("Error al enviar email de reseteo de contraseña a {}: {}", email, e.getMessage());
+            // Considera lanzar una excepción o manejar el error de forma adecuada
+            // throw new RuntimeException("Fallo al enviar el email de reseteo de contraseña", e);
+        }
     }
+
 
     @Transactional
     public Optional<User> validatePasswordResetToken(String token) {
@@ -134,7 +139,7 @@ public class UsuarioServicio implements UserDetailsService {
     @Transactional
     public void updatePassword(User user, String newPassword) {
         log.info("Actualizando contraseña para usuario: {}", user.getUsername());
-        user.setPassword(newPassword);
+        user.setPassword(newPassword); // Asume que la contraseña ya viene codificada desde el servicio de auth o donde se llame
         user.setResetPasswordToken(null);
         user.setResetPasswordTokenExpiryDate(null);
         usuarioRepositorio.save(user);

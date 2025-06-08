@@ -59,13 +59,13 @@ public class AuthController {
     EmailService emailService;
 
     @Autowired
-    UsuarioServicio usuarioServicio;
+    UsuarioServicio usuarioServicio; // Inyectado para usar registerNewUser, etc.
 
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@RequestBody LoginRequest loginRequest) {
         log.info("POST /api/auth/login - Intento de login para: {}", loginRequest.getUsername());
         try {
-            // El username que viene del frontend es el email para login
+            // Autentica al usuario usando el email como username
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
 
@@ -74,28 +74,42 @@ public class AuthController {
 
             User userDetails = (User) authentication.getPrincipal();
 
+            // Verifica si la cuenta está habilitada (activada por email)
             if (!userDetails.isEnabled()) {
                 log.warn("Login fallido para {}: cuenta no activada.", userDetails.getUsername());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Cuenta no activada. Por favor, verifica tu email.");
             }
 
+            // Obtiene los roles y selecciona el rol principal para el JWT
             List<String> roles = userDetails.getAuthorities().stream()
                     .map(item -> item.getAuthority())
                     .collect(Collectors.toList());
 
-            String mainRole = roles.isEmpty() ? "USER" : roles.get(0).replace("ROLE_", "");
+            // Si hay múltiples roles, puedes definir una prioridad (ej. ADMIN > COMPLEX_OWNER > USER)
+            String mainRole = "USER"; // Rol por defecto
+            if (roles.contains(ERole.ROLE_ADMIN.name())) {
+                mainRole = ERole.ROLE_ADMIN.name().replace("ROLE_", "");
+            } else if (roles.contains(ERole.ROLE_COMPLEX_OWNER.name())) {
+                mainRole = ERole.ROLE_COMPLEX_OWNER.name().replace("ROLE_", "");
+            } else if (roles.contains(ERole.ROLE_USER.name())) {
+                mainRole = ERole.ROLE_USER.name().replace("ROLE_", "");
+            }
 
-            log.info("Login exitoso para {}. Rol: {}", userDetails.getUsername(), mainRole);
+            log.info("Login exitoso para {}. Rol principal: {}", userDetails.getUsername(), mainRole);
 
-            // Constructor de JwtResponse adaptado: username es el email, nombreCompleto es campo aparte
+            // Retorna la respuesta JWT con los datos del usuario
             return ResponseEntity.ok(new JwtResponse(jwt,
                     userDetails.getId(),
-                    userDetails.getUsername(), // username es el email para login
-                    userDetails.getNombreCompleto(), // nombreCompleto es el campo de perfil
-                    mainRole));
-        } catch (Exception e) {
-            log.error("Error durante el login para {}: {}", loginRequest.getUsername(), e.getMessage());
+                    userDetails.getUsername(), // username es el email
+                    userDetails.getNombreCompleto(), // nombreCompleto del perfil
+                    mainRole)); // Rol principal
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            log.error("Error de autenticación durante el login para {}: {}", loginRequest.getUsername(), e.getMessage());
+            // Mensaje más genérico para seguridad
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Usuario o contraseña incorrectos, o cuenta no activada.");
+        } catch (Exception e) {
+            log.error("Error inesperado durante el login para {}: {}", loginRequest.getUsername(), e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno del servidor al intentar iniciar sesión.");
         }
     }
 
@@ -103,52 +117,58 @@ public class AuthController {
     public ResponseEntity<?> registerUser(@RequestBody RegisterRequest signUpRequest) {
         log.info("POST /api/auth/register - Intento de registro para email: {}", signUpRequest.getEmail());
 
-        // Verificamos si el email ya existe como username
-        if (usuarioRepositorio.existsByUsername(signUpRequest.getEmail())) { // Buscar por email (que es el username)
+        if (usuarioRepositorio.existsByUsername(signUpRequest.getEmail())) {
             log.warn("Registro fallido: Email '{}' ya está en uso como nombre de usuario.", signUpRequest.getEmail());
             return ResponseEntity
                     .badRequest()
                     .body("Error: ¡El correo electrónico ya está en uso!");
         }
 
-        // Crear nuevo usuario (el email del RegisterRequest se usará como username)
+        // Crear nuevo usuario
         User nuevoUsuario = new User(
-                signUpRequest.getEmail(), // Email del RegisterRequest se asigna a username del User
+                signUpRequest.getEmail(), // Email se usa como username
                 encoder.encode(signUpRequest.getPassword()),
-                signUpRequest.getNombreCompleto()); // nombreCompleto del RegisterRequest se asigna a nombreCompleto del User
+                signUpRequest.getNombreCompleto());
 
         Set<Role> roles = new HashSet<>();
+        // Por defecto, los nuevos usuarios registrados tienen el rol USER
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
         roles.add(userRole);
         nuevoUsuario.setRoles(roles);
 
-        // Asignar otros campos de perfil desde RegisterRequest (si el modelo User los tiene)
+        // Asignar otros campos de perfil desde RegisterRequest
         nuevoUsuario.setUbicacion(signUpRequest.getUbicacion());
         nuevoUsuario.setEdad(signUpRequest.getEdad());
         nuevoUsuario.setTelefono(signUpRequest.getTelefono());
         nuevoUsuario.setBio(signUpRequest.getBio());
 
         try {
-            usuarioServicio.registerNewUser(nuevoUsuario);
+            usuarioServicio.registerNewUser(nuevoUsuario); // Este servicio ahora envía el email de validación
             log.info("Usuario '{}' registrado exitosamente. Email de validación enviado.", signUpRequest.getEmail());
             return ResponseEntity.ok("Usuario registrado exitosamente. Por favor, revisa tu email para activar tu cuenta.");
         } catch (Exception e) {
-            log.error("Error durante el registro de usuario: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: No se pudo registrar el usuario. Intenta de nuevo.");
+            log.error("Error durante el registro de usuario {}: {}", signUpRequest.getEmail(), e.getMessage(), e);
+            // Captura cualquier excepción, incluyendo MessagingException del servicio de email
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: No se pudo registrar el usuario. Posiblemente un problema con el envío del email de verificación.");
         }
     }
 
-    @GetMapping("/validate")
-    public ResponseEntity<String> validateAccount(@RequestParam("token") String token) {
-        log.info("GET /api/auth/validate - Intentando validar cuenta con token: {}", token);
-        boolean activated = usuarioServicio.activateUser(token);
-        if (activated) {
-            log.info("Cuenta activada exitosamente para token: {}", token);
-            return ResponseEntity.ok("¡Tu cuenta ha sido activada exitosamente! Ya puedes iniciar sesión.");
-        } else {
-            log.warn("Fallo en la activación de cuenta: token inválido o expirado: {}", token);
-            return ResponseEntity.badRequest().body("Error: Token de activación inválido o expirado.");
+    @GetMapping("/verify-account") // Endpoint para verificación de cuenta (usado por el enlace del email)
+    public ResponseEntity<String> verifyUser(@RequestParam String token) {
+        log.info("GET /api/auth/verify-account - Intentando validar cuenta con token.");
+        try {
+            boolean activated = usuarioServicio.activateUser(token);
+            if (activated) {
+                log.info("Cuenta activada exitosamente para token.");
+                return ResponseEntity.ok("¡Tu cuenta ha sido activada exitosamente! Ya puedes iniciar sesión.");
+            } else {
+                log.warn("Fallo en la activación de cuenta: token inválido o expirado.");
+                return ResponseEntity.badRequest().body("Error: Token de activación inválido o expirado.");
+            }
+        } catch (Exception e) {
+            log.error("Error inesperado durante la activación de cuenta con token: {}. Mensaje: {}", token, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al activar la cuenta.");
         }
     }
 
@@ -158,6 +178,7 @@ public class AuthController {
         try {
             usuarioServicio.createPasswordResetTokenForUser(email); // email es el username
             log.info("Link de reseteo de contraseña enviado a: {}", email);
+            // Mensaje genérico para no dar pistas sobre emails registrados o no
             return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
         } catch (UsernameNotFoundException e) {
             log.warn("Intento de reseteo de contraseña para email no registrado: {}", email);
@@ -171,16 +192,21 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(@RequestBody PasswordResetRequest request) {
         log.info("POST /api/auth/reset-password - Intentando restablecer contraseña con token.");
-        Optional<User> userOptional = usuarioServicio.validatePasswordResetToken(request.getToken());
-        if (userOptional.isEmpty()) {
-            log.warn("Intento de reseteo de contraseña con token inválido o expirado.");
-            return ResponseEntity.badRequest().body("Token de restablecimiento de contraseña inválido o expirado.");
+        try {
+            Optional<User> userOptional = usuarioServicio.validatePasswordResetToken(request.getToken());
+            if (userOptional.isEmpty()) {
+                log.warn("Intento de reseteo de contraseña con token inválido o expirado.");
+                return ResponseEntity.badRequest().body("Token de restablecimiento de contraseña inválido o expirado.");
+            }
+            User usuario = userOptional.get();
+            // La contraseña ya debe venir codificada desde el servicio de autenticación o se codifica aquí
+            usuarioServicio.updatePassword(usuario, encoder.encode(request.getNewPassword()));
+            log.info("Contraseña restablecida exitosamente para usuario: {}", usuario.getUsername());
+            return ResponseEntity.ok("Contraseña restablecida exitosamente.");
+        } catch (Exception e) {
+            log.error("Error al restablecer contraseña: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al restablecer la contraseña.");
         }
-        User usuario = userOptional.get();
-        usuarioServicio.updatePassword(usuario, encoder.encode(request.getNewPassword()));
-        // CORRECCIÓN AQUÍ: Usar getUsername() directamente del objeto 'usuario'
-        log.info("Contraseña restablecida exitosamente para usuario: {}", usuario.getUsername());
-        return ResponseEntity.ok("Contraseña restablecida exitosamente.");
     }
 
     @GetMapping("/validate-token")
