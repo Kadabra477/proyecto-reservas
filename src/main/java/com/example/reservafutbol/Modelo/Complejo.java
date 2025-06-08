@@ -32,6 +32,11 @@ public class Complejo {
     @Column(nullable = false)
     private LocalTime horarioCierre;   // Ej: 00:00 (medianoche)
 
+    // --- Asociación con el propietario (User) ---
+    @ManyToOne(fetch = FetchType.LAZY) // Muchos complejos pueden ser de un solo propietario
+    @JoinColumn(name = "propietario_id") // Columna que almacenará el ID del propietario en la tabla 'complejos'
+    private User propietario; // El usuario que es dueño/administrador de este complejo
+
     // --- Detalles de Canchas por Tipo dentro de este Complejo ---
 
     // Mapa para almacenar la cantidad de canchas por tipo (Ej: {"Fútbol 5": 6, "Pádel": 2})

@@ -1,12 +1,13 @@
 package com.example.reservafutbol.Servicio;
 
-import com.example.reservafutbol.Modelo.Complejo; // Importar Complejo
+import com.example.reservafutbol.Modelo.Complejo;
+import com.example.reservafutbol.Modelo.ERole; // Importar ERole
 import com.example.reservafutbol.Modelo.Reserva;
 import com.example.reservafutbol.Modelo.User;
-import com.example.reservafutbol.Repositorio.ComplejoRepositorio; // Importar ComplejoRepositorio
+import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
 import com.example.reservafutbol.Repositorio.ReservaRepositorio;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
-import com.example.reservafutbol.payload.response.EstadisticasResponse; // Asegúrate de que este DTO exista
+import com.example.reservafutbol.payload.response.EstadisticasResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,32 +44,67 @@ public class ReservaServicio {
     private UsuarioRepositorio usuarioRepositorio;
 
     @Autowired
-    private ComplejoRepositorio complejoRepositorio; // Inyectar ComplejoRepositorio
+    private ComplejoRepositorio complejoRepositorio;
 
     @Autowired
     private EmailService emailService;
 
     @Value("${admin.email}")
-    private String adminEmail;
+    private String adminEmail; // Este es el email del administrador general de la página
 
     private static final int SLOT_DURATION_MINUTES = 60;
-    // Horarios de apertura y cierre por defecto. Idealmente, estos vendrían del Complejo.
-    private static final LocalTime DEFAULT_OPEN_TIME = LocalTime.of(10, 0); // 10:00 AM
-    private static final LocalTime DEFAULT_LAST_BOOKABLE_HOUR_START = LocalTime.of(23, 0); // Último slot comienza a las 23:00
+    private static final LocalTime DEFAULT_OPEN_TIME = LocalTime.of(10, 0);
+    private static final LocalTime DEFAULT_LAST_BOOKABLE_HOUR_START = LocalTime.of(23, 0);
 
-    // Método `listarReservas` (por ID de Complejo, no de cancha específica)
-    public List<Reserva> listarReservasPorComplejo(Long complejoId) {
-        log.info("Buscando reservas para complejo ID: {}", complejoId);
-        // Aquí necesitaríamos un método en ReservaRepositorio como findByComplejoId
-        // Por ahora, usaremos findAll() y filtraremos en Java, o crearemos el método si es necesario.
-        return reservaRepositorio.findAll().stream()
-                .filter(reserva -> reserva.getComplejo() != null && reserva.getComplejo().getId().equals(complejoId))
+    // Método `listarReservasPorComplejo` (puede ser útil para propietarios)
+    @Transactional(readOnly = true)
+    public List<Reserva> listarReservasPorComplejo(Long complejoId, String requesterUsername) {
+        log.info("Buscando reservas para complejo ID: {} por usuario: {}", complejoId, requesterUsername);
+        User requester = usuarioRepositorio.findByUsername(requesterUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + requesterUsername));
+
+        // Un ADMIN puede ver las reservas de cualquier complejo
+        if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
+            return reservaRepositorio.findByComplejoId(complejoId);
+        }
+
+        // Un COMPLEX_OWNER solo puede ver las reservas de sus propios complejos
+        if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
+            Complejo complejo = complejoRepositorio.findById(complejoId)
+                    .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
+            if (complejo.getPropietario() == null || !complejo.getPropietario().getId().equals(requester.getId())) {
+                throw new SecurityException("Acceso denegado: Este complejo no te pertenece.");
+            }
+            return reservaRepositorio.findByComplejoId(complejoId);
+        }
+
+        // Cualquier otro rol no tiene acceso a esta función
+        return Collections.emptyList();
+    }
+
+    // Nuevo método para listar reservas por complejo y tipo (con autorización)
+    @Transactional(readOnly = true)
+    public List<Reserva> listarReservasPorComplejoYTipo(Long complejoId, String tipoCancha, String requesterUsername) {
+        log.info("Buscando reservas de tipo '{}' en complejo ID: {} por usuario: {}", tipoCancha, complejoId, requesterUsername);
+        User requester = usuarioRepositorio.findByUsername(requesterUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + requesterUsername));
+
+        // Lógica de autorización igual que en listarReservasPorComplejo
+        if (requester.getRoles().stream().noneMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
+            // Si el requester NO es ADMIN, debe ser propietario del complejo
+            Complejo complejo = complejoRepositorio.findById(complejoId)
+                    .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
+            if (complejo.getPropietario() == null || !complejo.getPropietario().getId().equals(requester.getId())) {
+                throw new SecurityException("Acceso denegado: Este complejo no te pertenece.");
+            }
+        }
+
+        return reservaRepositorio.findAll().stream() // O podrías crear un método más específico en el repositorio
+                .filter(r -> r.getComplejo().getId().equals(complejoId) && r.getTipoCanchaReservada().equals(tipoCancha))
                 .collect(Collectors.toList());
     }
 
     @Transactional
-    // MODIFICADO: `crearReserva` ahora espera que la reserva ya tenga el Complejo asignado.
-    // La asignación de la "instancia de cancha" (ej. "Fútbol 5 - Instancia 3") se hace aquí o en el controlador.
     public Reserva crearReserva(Reserva reserva) {
         // Validaciones básicas
         if (reserva.getUsuario() == null && (reserva.getUserEmail() == null || reserva.getUserEmail().isBlank())) {
@@ -151,12 +188,23 @@ public class ReservaServicio {
         log.info("Reserva creada con ID: {} para complejo {} (tipo: {}) y asignada a: {}",
                 reservaGuardada.getId(), complejoAsignado.getNombre(), reserva.getTipoCanchaReservada(), nombreCanchaAsignada);
 
-        // --- NOTIFICACIÓN AL DUEÑO ---
+        // --- NOTIFICACIÓN AL ADMINISTRADOR GENERAL ---
         try {
             emailService.sendNewReservationNotification(reservaGuardada, adminEmail);
-            log.info("Notificación de nueva reserva enviada al administrador.");
+            log.info("Notificación de nueva reserva enviada al administrador general ({}).", adminEmail);
         } catch (Exception e) {
-            log.error("Error al enviar notificación de nueva reserva al administrador: {}", e.getMessage(), e);
+            log.error("Error al enviar notificación de nueva reserva al administrador general: {}", e.getMessage(), e);
+        }
+
+        // --- NOTIFICACIÓN AL DUEÑO DEL COMPLEJO ASOCIADO ---
+        if (reserva.getComplejo() != null && reserva.getComplejo().getPropietario() != null) {
+            try {
+                String ownerEmail = reserva.getComplejo().getPropietario().getUsername(); // El username es el email
+                emailService.sendNewReservationNotification(reservaGuardada, ownerEmail);
+                log.info("Notificación de nueva reserva enviada al dueño del complejo {}.", ownerEmail);
+            } catch (Exception e) {
+                log.error("Error al enviar notificación de nueva reserva al dueño del complejo: {}", e.getMessage(), e);
+            }
         }
 
         return reservaGuardada;
@@ -169,10 +217,22 @@ public class ReservaServicio {
     }
 
     @Transactional
-    public Reserva confirmarReserva(Long id) {
-        log.info("Intentando confirmar reserva con ID: {}", id);
+    // Agregamos el username del usuario que intenta confirmar para verificar propiedad
+    public Reserva confirmarReserva(Long id, String confirmadorUsername) {
+        log.info("Intentando confirmar reserva con ID: {} por usuario: {}", id, confirmadorUsername);
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+
+        // --- Lógica de Autorización a Nivel de Recurso ---
+        User confirmador = usuarioRepositorio.findByUsername(confirmadorUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + confirmadorUsername));
+
+        if (confirmador.getRoles().stream().noneMatch(role -> role.getName().equals(ERole.ROLE_ADMIN))) {
+            // Si NO es ADMIN, debe ser propietario del complejo de la reserva
+            if (r.getComplejo() == null || r.getComplejo().getPropietario() == null || !r.getComplejo().getPropietario().getId().equals(confirmador.getId())) {
+                throw new SecurityException("Acceso denegado: No tienes permisos para confirmar esta reserva.");
+            }
+        }
 
         // Unificar el estado 'confirmada' con 'pagada' o 'pendiente_pago_efectivo'
         if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado())) {
@@ -188,8 +248,23 @@ public class ReservaServicio {
     }
 
     @Transactional
-    public void eliminarReserva(Long id) {
-        log.info("Intentando eliminar reserva con ID: {}", id);
+    // Agregamos el username del usuario que intenta eliminar para verificar propiedad
+    public void eliminarReserva(Long id, String eliminadorUsername) {
+        log.info("Intentando eliminar reserva con ID: {} por usuario: {}", id, eliminadorUsername);
+        Reserva r = reservaRepositorio.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+
+        // --- Lógica de Autorización a Nivel de Recurso ---
+        User eliminador = usuarioRepositorio.findByUsername(eliminadorUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + eliminadorUsername));
+
+        if (eliminador.getRoles().stream().noneMatch(role -> role.getName().equals(ERole.ROLE_ADMIN))) {
+            // Si NO es ADMIN, debe ser propietario del complejo de la reserva
+            if (r.getComplejo() == null || r.getComplejo().getPropietario() == null || !r.getComplejo().getPropietario().getId().equals(eliminador.getId())) {
+                throw new SecurityException("Acceso denegado: No tienes permisos para eliminar esta reserva.");
+            }
+        }
+
         if (reservaRepositorio.existsById(id)) {
             reservaRepositorio.deleteById(id);
             log.info("Reserva con ID: {} eliminada exitosamente.", id);
@@ -199,9 +274,39 @@ public class ReservaServicio {
     }
 
     @Transactional(readOnly = true)
-    public List<Reserva> listarTodas() {
-        log.info("Listando todas las reservas (para admin).");
-        return reservaRepositorio.findAll();
+    // MODIFICADO: Este método ahora acepta un username y filtra según el rol
+    public List<Reserva> listarTodas(String requesterUsername) {
+        log.info("Listando todas las reservas para: {}", requesterUsername);
+        User requester = usuarioRepositorio.findByUsername(requesterUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + requesterUsername));
+
+        // Si es ADMIN, listar todas las reservas
+        if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
+            log.info("Usuario {} es ADMIN, listando todas las reservas del sistema.", requesterUsername);
+            return reservaRepositorio.findAll();
+        }
+        // Si es COMPLEX_OWNER, listar solo las reservas de sus complejos
+        else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
+            log.info("Usuario {} es COMPLEX_OWNER, listando reservas de sus complejos.", requesterUsername);
+            List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
+
+            // Si el dueño no tiene complejos asignados, devuelve una lista vacía
+            if (complejosDelPropietario.isEmpty()) {
+                log.warn("El propietario {} no tiene complejos asignados, devolviendo lista de reservas vacía.", requesterUsername);
+                return Collections.emptyList();
+            }
+
+            List<Long> idsComplejos = complejosDelPropietario.stream()
+                    .map(Complejo::getId)
+                    .collect(Collectors.toList());
+
+            return reservaRepositorio.findByComplejoIdIn(idsComplejos);
+        }
+        // Para cualquier otro rol (ej. USER normal), devuelve una lista vacía o maneja como error
+        else {
+            log.warn("Usuario {} no tiene rol de ADMIN o COMPLEX_OWNER para acceder a esta función.", requesterUsername);
+            return Collections.emptyList(); // O lanzar una SecurityException si prefieres
+        }
     }
 
     @Transactional(readOnly = true)
@@ -217,8 +322,22 @@ public class ReservaServicio {
     }
 
     @Transactional
-    public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId) {
+    // Agregamos el username del usuario que intenta marcar pagada para verificar propiedad
+    public Reserva marcarComoPagada(Long id, String metodoPago, String mercadoPagoPaymentId, String pagadorUsername) {
+        log.info("Intentando marcar como pagada reserva con ID: {} por usuario: {}", id, pagadorUsername);
         Reserva reserva = reservaRepositorio.findById(id).orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
+
+        // --- Lógica de Autorización a Nivel de Recurso ---
+        User pagador = usuarioRepositorio.findByUsername(pagadorUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + pagadorUsername));
+
+        if (pagador.getRoles().stream().noneMatch(role -> role.getName().equals(ERole.ROLE_ADMIN))) {
+            // Si NO es ADMIN, debe ser propietario del complejo de la reserva
+            if (reserva.getComplejo() == null || reserva.getComplejo().getPropietario() == null || !reserva.getComplejo().getPropietario().getId().equals(pagador.getId())) {
+                throw new SecurityException("Acceso denegado: No tienes permisos para marcar esta reserva como pagada.");
+            }
+        }
+
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
@@ -227,10 +346,23 @@ public class ReservaServicio {
     }
 
     @Transactional
-    public Reserva generarEquipos(Long id) {
-        log.info("Generando equipos para reserva ID: {}", id);
+    // Agregamos el username del usuario que intenta generar equipos para verificar propiedad
+    public Reserva generarEquipos(Long id, String generadorUsername) {
+        log.info("Generando equipos para reserva ID: {} por usuario: {}", id, generadorUsername);
         Reserva r = reservaRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+
+        // --- Lógica de Autorización a Nivel de Recurso ---
+        User generador = usuarioRepositorio.findByUsername(generadorUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + generadorUsername));
+
+        if (generador.getRoles().stream().noneMatch(role -> role.getName().equals(ERole.ROLE_ADMIN))) {
+            // Si NO es ADMIN, debe ser propietario del complejo de la reserva
+            if (r.getComplejo() == null || r.getComplejo().getPropietario() == null || !r.getComplejo().getPropietario().getId().equals(generador.getId())) {
+                throw new SecurityException("Acceso denegado: No tienes permisos para generar equipos para esta reserva.");
+            }
+        }
+
         List<String> jugadores = r.getJugadores();
         if (jugadores == null || jugadores.size() < 2) {
             throw new IllegalArgumentException("Debes ingresar al menos 2 jugadores para armar equipos.");
@@ -335,65 +467,64 @@ public class ReservaServicio {
         return Optional.empty(); // No hay instancias disponibles
     }
 
-
-    // El método `getAvailableTimeSlots(Long canchaId, LocalDate fecha)` antiguo ya no es útil
-    // para el flujo de "pool de canchas" y debería ser eliminado si ya no hay canchas individuales.
-    // Si aún se usa en alguna parte (ej. Admin Panel para ver un calendario de UNA cancha física),
-    // debería adaptarse para trabajar con la nueva estructura o eliminarse.
-    // Lo comento aquí para que no genere un error de compilación.
-    /*
+    // --- Método calcularEstadisticas (MODIFICADO para aceptar username) ---
     @Transactional(readOnly = true)
-    public List<String> getAvailableTimeSlots(Long canchaId, LocalDate fecha) {
-        log.warn("Llamada a método getAvailableTimeSlots(canchaId, fecha) que está siendo deprecado/revisado.");
-        // Esta lógica necesitaría reevaluarse si ya no tienes entidades 'Cancha'.
-        // Podrías mapearlo a una vista de un solo tipo de cancha o eliminarlo.
-        return Collections.emptyList();
-    }
-    */
+    public EstadisticasResponse calcularEstadisticas(String requesterUsername) {
+        log.info("Calculando estadísticas para: {}", requesterUsername);
+        User requester = usuarioRepositorio.findByUsername(requesterUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + requesterUsername));
 
-    // --- Método calcularEstadisticas (Reincorporado y corregido) ---
-    @Transactional(readOnly = true)
-    public EstadisticasResponse calcularEstadisticas() {
-        log.info("Calculando estadísticas del complejo...");
-        List<Reserva> todasLasReservas = reservaRepositorio.findAll();
+        List<Reserva> reservasParaEstadisticas;
 
-        BigDecimal ingresosTotalesConfirmados = todasLasReservas.stream()
+        if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
+            log.info("Generando estadísticas globales (ADMIN).");
+            reservasParaEstadisticas = reservaRepositorio.findAll();
+        } else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
+            log.info("Generando estadísticas para complejos de propietario {}.", requesterUsername);
+            List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
+            List<Long> idsComplejos = complejosDelPropietario.stream()
+                    .map(Complejo::getId)
+                    .collect(Collectors.toList());
+            if (idsComplejos.isEmpty()) {
+                log.warn("Propietario {} no tiene complejos, no hay estadísticas para mostrar.", requesterUsername);
+                return new EstadisticasResponse(BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>());
+            }
+            reservasParaEstadisticas = reservaRepositorio.findByComplejoIdIn(idsComplejos);
+        } else {
+            log.warn("Usuario {} no tiene rol de ADMIN o COMPLEX_OWNER para ver estadísticas.", requesterUsername);
+            return new EstadisticasResponse(BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>());
+        }
+
+        BigDecimal ingresosTotalesConfirmados = reservasParaEstadisticas.stream()
                 .filter(reserva -> "pagada".equalsIgnoreCase(reserva.getEstado()))
                 .map(Reserva::getPrecio)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        log.debug("Ingresos totales confirmados y pagados: {}", ingresosTotalesConfirmados);
 
-        Long totalReservasConfirmadas = todasLasReservas.stream()
+        Long totalReservasConfirmadas = reservasParaEstadisticas.stream()
                 .filter(reserva -> "pagada".equalsIgnoreCase(reserva.getEstado()) || "confirmada".equalsIgnoreCase(reserva.getEstado()) || "pendiente_pago_efectivo".equalsIgnoreCase(reserva.getEstado()))
                 .count();
 
-        Long totalReservasPendientes = todasLasReservas.stream()
+        Long totalReservasPendientes = reservasParaEstadisticas.stream()
                 .filter(reserva -> "pendiente".equalsIgnoreCase(reserva.getEstado()) || "pendiente_pago_mp".equalsIgnoreCase(reserva.getEstado()))
                 .count();
 
-        Long totalReservasCanceladas = todasLasReservas.stream()
+        Long totalReservasCanceladas = reservasParaEstadisticas.stream()
                 .filter(reserva -> "cancelada".equalsIgnoreCase(reserva.getEstado()) || "rechazada_pago_mp".equalsIgnoreCase(reserva.getEstado()))
                 .count();
-        log.debug("Reservas: Confirmadas={}, Pendientes={}, Canceladas={}",
-                totalReservasConfirmadas, totalReservasPendientes, totalReservasCanceladas);
 
-        // MODIFICADO: Las estadísticas por cancha ahora son por TIPO DE CANCHA RESERVADA
-        Map<String, Long> reservasPorTipoCancha = todasLasReservas.stream()
+        Map<String, Long> reservasPorTipoCancha = reservasParaEstadisticas.stream()
                 .collect(Collectors.groupingBy(Reserva::getTipoCanchaReservada, Collectors.counting()));
-        log.debug("Reservas por tipo de cancha: {}", reservasPorTipoCancha);
 
-        Map<String, Long> horariosPico = todasLasReservas.stream()
+        Map<String, Long> horariosPico = reservasParaEstadisticas.stream()
                 .map(reserva -> reserva.getFechaHora().toLocalTime().truncatedTo(ChronoUnit.HOURS))
                 .collect(Collectors.groupingBy(LocalTime::toString, Collectors.counting()));
-        log.debug("Horarios pico: {}", horariosPico);
-
 
         return new EstadisticasResponse(
                 ingresosTotalesConfirmados,
                 totalReservasConfirmadas,
                 totalReservasPendientes,
                 totalReservasCanceladas,
-                reservasPorTipoCancha, // Usar el mapa por tipo de cancha
+                reservasPorTipoCancha,
                 horariosPico
         );
     }

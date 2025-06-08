@@ -2,6 +2,7 @@ package com.example.reservafutbol.Modelo;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder; // Importar Builder
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -10,13 +11,14 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.Date; // Aunque LocalDateTime es preferible, se mantiene si ya se usa Date
+// import java.util.Date; // Removido, ya que usas LocalDateTime
 import java.util.List;
 import java.util.Set;
 
 @Entity
 @Table(name = "reservas")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
+@Builder // Añadir @Builder aquí
 public class Reserva {
 
     @Id
@@ -47,24 +49,15 @@ public class Reserva {
     @Column(nullable = true) // Puede ser null si el complejo no numera sus instancias idénticas
     private String nombreCanchaAsignada;
 
-    // ELIMINADO: Ya no se relaciona con una entidad Cancha específica
-    // @ManyToOne(fetch = FetchType.LAZY)
-    // @JoinColumn(name = "cancha_id", referencedColumnName = "id", nullable = false)
-    // private Cancha cancha; // ELIMINAR
-
-    // ELIMINADO: canchaNombre era el nombre de la entidad Cancha, ahora se usa nombreCanchaAsignada
-    // @Column(nullable = false)
-    // private String canchaNombre; // ELIMINAR
-
     private String cliente;
+
+    // Nuevo: DNI del cliente. Se asume String por la validación de RegEx
+    private String dni;
+
     private String telefono;
 
     @Column(nullable = false)
     private LocalDateTime fechaHora;
-
-    // ELIMINADO: El campo 'confirmada' se vuelve redundante si 'estado' es completo y bien manejado
-    // @Column(nullable = false)
-    // private Boolean confirmada = false; // ELIMINAR
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal precio; // Precio total de la reserva
@@ -75,7 +68,7 @@ public class Reserva {
     private String estado = "pendiente"; // Estados: "pendiente", "pendiente_pago_efectivo", "pendiente_pago_mp", "pagada", "rechazada_pago_mp", "cancelada"
 
     private String metodoPago;
-    private Date fechaPago; // Considerar cambiar a LocalDateTime para consistencia
+    private LocalDateTime fechaPago; // Cambiado a LocalDateTime para consistencia
     private String mercadoPagoPaymentId; // ID de la transacción de Mercado Pago
 
     @ElementCollection(fetch = FetchType.EAGER) // Carga los jugadores con la reserva

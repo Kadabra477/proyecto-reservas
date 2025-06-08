@@ -1,7 +1,7 @@
 package com.example.reservafutbol.DTO;
 
 import lombok.AllArgsConstructor;
-import lombok.Data; // Importa @Data
+import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import com.example.reservafutbol.Modelo.Reserva; // Importa la entidad Reserva
@@ -9,13 +9,13 @@ import com.example.reservafutbol.Modelo.Complejo; // Importa la entidad Complejo
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Date;
+// import java.util.Date; // Removido
 import java.util.List;
 import java.util.Set;
 
-@Data // Incluye @Getter, @Setter, @ToString, @EqualsAndHashCode
-@NoArgsConstructor // Mantén este para el constructor sin argumentos
-@AllArgsConstructor // Mantén este para el constructor con todos los argumentos (si lo usas explícitamente)
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ReservaDetalleDTO {
     private Long id;
     private String userEmail;
@@ -29,6 +29,7 @@ public class ReservaDetalleDTO {
     private String nombreCanchaAsignada; // Nombre de la cancha asignada internamente por el sistema
 
     private String cliente;
+    private String dni; // Añadido DNI al DTO
     private String telefono;
     private LocalDateTime fechaHora;
     private BigDecimal precioTotal;
@@ -54,6 +55,7 @@ public class ReservaDetalleDTO {
         this.nombreCanchaAsignada = reserva.getNombreCanchaAsignada();
 
         this.cliente = reserva.getCliente();
+        this.dni = reserva.getDni(); // Mapear el DNI
         this.telefono = reserva.getTelefono();
         this.fechaHora = reserva.getFechaHora();
         this.precioTotal = reserva.getPrecio();

@@ -42,9 +42,6 @@ public class User implements UserDetails {
     @Column(nullable = false, unique = true)
     private String username; // Este campo ahora es el EMAIL y se usa para el login y contacto
 
-    // ELIMINADO: Ya no necesitamos un campo 'email' separado, ya que 'username' es el email.
-    // private String email;
-
     @NotBlank(message = "La contraseña es obligatoria")
     @Size(min = 6, max = 120, message = "La contraseña es demasiado larga (max 120 caracteres)")
     @Column(nullable = false)
@@ -127,6 +124,4 @@ public class User implements UserDetails {
     public boolean isEnabled() {
         return this.enabled;
     }
-    // No se necesita getEmail() ya que username es el email.
-    // getNombreCompleto() ya es generado por Lombok.
 }

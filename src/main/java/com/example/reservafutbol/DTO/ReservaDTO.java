@@ -1,16 +1,15 @@
 package com.example.reservafutbol.DTO;
 
-import jakarta.validation.constraints.Future; // Puede que ya no necesitemos @Future si validamos en servicio
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data; // Asegúrate de importar Lombok Data
 
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List; // Necesario si manejas jugadores/equipos
-import java.util.Set; // Necesario si manejas jugadores/equipos
+// import java.util.List; // Removido si no se usan jugadores/equipos en el DTO de entrada
+// import java.util.Set; // Removido si no se usan jugadores/equipos en el DTO de entrada
 
-@Data // Proporciona getters, setters, equals, hashCode, toString
+@Data
 public class ReservaDTO {
 
     @NotNull(message = "El ID del complejo es obligatorio")
@@ -20,7 +19,6 @@ public class ReservaDTO {
     private String tipoCancha; // Tipo de cancha que el usuario quiere reservar (ej. "Fútbol 5")
 
     @NotNull(message = "La fecha es obligatoria")
-    // @Future(message = "La fecha debe ser en el futuro") // La validación detallada se hará en el Servicio
     private LocalDate fecha;
 
     @NotNull(message = "La hora es obligatoria")
@@ -33,7 +31,7 @@ public class ReservaDTO {
     private String apellido;
 
     @NotBlank(message = "El DNI es obligatorio")
-    private String dni;
+    private String dni; // Añadido el DNI
 
     @NotBlank(message = "El teléfono es obligatorio")
     private String telefono;

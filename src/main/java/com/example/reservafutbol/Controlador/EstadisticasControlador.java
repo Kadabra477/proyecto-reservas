@@ -5,6 +5,7 @@ import com.example.reservafutbol.payload.response.EstadisticasResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication; // ¡Importar Authentication!
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,10 +24,12 @@ public class EstadisticasControlador {
     private ReservaServicio reservaServicio;
 
     @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<EstadisticasResponse> getEstadisticasAdmin() {
-        log.info("GET /api/estadisticas/admin - Solicitud de estadísticas de administrador.");
-        EstadisticasResponse estadisticas = reservaServicio.calcularEstadisticas(); // Llama al método del servicio
+    // @PreAuthorize("hasRole('ADMIN')") // Ya está cubierto en SecurityConfig, pero puedes mantenerlo si lo necesitas
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')") // Modificado para permitir a ambos roles
+    public ResponseEntity<EstadisticasResponse> getEstadisticasAdmin(Authentication authentication) { // Añadir Authentication
+        String username = authentication.getName(); // Obtener el username del usuario autenticado
+        log.info("GET /api/estadisticas/admin - Solicitud de estadísticas de {} (rol admin/owner).", username);
+        EstadisticasResponse estadisticas = reservaServicio.calcularEstadisticas(username); // Pasar el username al servicio
         return ResponseEntity.ok(estadisticas);
     }
 }

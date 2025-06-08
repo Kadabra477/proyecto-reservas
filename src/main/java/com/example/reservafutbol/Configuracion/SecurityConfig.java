@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true) // Habilitar @PreAuthorize
 public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -45,9 +45,8 @@ public class SecurityConfig {
     @Value("${frontend.url}")
     private String frontendUrl;
 
-    // Inyecta la variable de entorno BACKEND_URL_BASE
     @Value("${BACKEND_URL_BASE}")
-    private String backendUrlBase; // Para la URL del backend sin /api
+    private String backendUrlBase;
 
     public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
         this.jwtUtil = jwtUtil;
@@ -87,36 +86,45 @@ public class SecurityConfig {
                                 "/error", "/error-404"
                         ).permitAll()
 
-                        // ¡CLAVE! Rutas para Complejos - Obtener todos y por ID DEBEN SER públicos
+                        // Rutas de Complejos - Obtener todos y por ID DEBEN SER públicos
                         .requestMatchers(HttpMethod.GET, "/api/complejos", "/api/complejos/**").permitAll()
                         // El endpoint de disponibilidad por tipo de cancha es público
                         .requestMatchers(HttpMethod.GET, "/api/reservas/disponibilidad-por-tipo").permitAll()
 
-                        // Rutas protegidas que requieren autenticación
-                        .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
+                        // Nuevas rutas para propietarios de complejos
+                        .requestMatchers("/api/complejos/mis-complejos").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Propietarios ven sus complejos
+                        .requestMatchers(HttpMethod.POST, "/api/complejos").hasRole("ADMIN") // Solo ADMIN crea complejos (y los asigna a un dueño)
+                        // Para PUT/DELETE de complejos, la autorización a nivel de recurso se hace en el servicio
+                        .requestMatchers(HttpMethod.PUT, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
-                        // Rutas de Reservas
+                        // Rutas de Reservas protegidas por Authentication (para cualquier usuario logueado)
                         .requestMatchers("/api/reservas/crear").authenticated()
-                        .requestMatchers("/api/reservas/usuario").authenticated()
-                        .requestMatchers("/api/reservas/{id}").authenticated()
-                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").authenticated()
+                        .requestMatchers("/api/reservas/usuario").authenticated() // Usuario ve sus reservas
+
+                        // Rutas de Reservas para Admin o Propietario (filtro en servicio)
+                        .requestMatchers("/api/reservas/admin/todas").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Para ver una reserva específica
+                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/reservas/{id}/confirmar").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/reservas/{id}/marcar-pagada").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/reservas/{id}/equipos").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        // Este endpoint lo protegeremos también si quieres que los dueños puedan ver sus reservas por tipo
+                        .requestMatchers(HttpMethod.GET, "/api/reservas/complejo/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+
 
                         // Rutas de Pagos
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
 
-                        // Rutas de Admin (Requieren rol ADMIN)
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/estadisticas/admin").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/complejos").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/complejos/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasRole("ADMIN")
-                        .requestMatchers("/api/reservas/admin/todas").hasRole("ADMIN")
-                        .requestMatchers("/api/reservas/{id}/confirmar").hasRole("ADMIN")
-                        .requestMatchers("/api/reservas/{id}/marcar-pagada").hasRole("ADMIN")
-                        .requestMatchers("/api/reservas/{id}/equipos").hasRole("ADMIN")
-                        .requestMatchers("/api/reservas/{id}").hasRole("ADMIN")
+                        // Rutas de Usuario (perfil)
+                        .requestMatchers("/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
+
+                        // Rutas de Estadísticas (solo ADMIN o COMPLEX_OWNER)
+                        .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+
 
                         .anyRequest().authenticated() // Cualquier otra petición requiere autenticación
                 )
@@ -136,7 +144,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(frontendUrl, backendUrlBase, "http://localhost:3000")); // Añadido backendUrlBase
+        config.setAllowedOrigins(List.of(frontendUrl, backendUrlBase, "http://localhost:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         config.setAllowCredentials(true);
@@ -161,8 +169,8 @@ public class SecurityConfig {
             log.info("OAuth2 authentication success handler triggered.");
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
-                String email = oauthUser.getAttribute("email"); // Email del OAuth2
-                String nombreCompleto = oauthUser.getAttribute("name"); // Nombre del OAuth2
+                String email = oauthUser.getAttribute("email");
+                String nombreCompleto = oauthUser.getAttribute("name");
                 String role = authentication.getAuthorities().stream()
                         .map(GrantedAuthority::getAuthority)
                         .filter(a -> a.startsWith("ROLE_"))
@@ -177,13 +185,11 @@ public class SecurityConfig {
                 }
 
                 try {
-                    // Usar generateTokenFromEmail que ahora toma email (username), nombreCompleto y role
                     String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
-                    // La URL del redirect debe usar backendUrlBase (sin /api)
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
                     targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
-                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8); // username aquí es el email
+                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
                     targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
