@@ -27,7 +27,8 @@ public enum EstadoReserva {
                 return b;
             }
         }
-        // Puedes decidir si lanzar una excepción o devolver un valor por defecto
+        // Si no se encuentra una coincidencia, puedes decidir si lanzar una excepción
+        // o devolver un valor por defecto como EstadoReserva.PENDIENTE
         throw new IllegalArgumentException("No se encontró un estado de reserva con el valor: " + text);
     }
 }

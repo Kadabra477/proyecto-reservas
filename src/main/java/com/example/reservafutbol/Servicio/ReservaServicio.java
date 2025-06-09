@@ -91,7 +91,7 @@ public class ReservaServicio {
 
         // Lógica de autorización igual que en listarReservasPorComplejo
         if (requester.getRoles().stream().noneMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
-            // Si el requester NO es ADMIN, debe ser propietario del complejo
+            // Si NO es ADMIN, debe ser propietario del complejo
             Complejo complejo = complejoRepositorio.findById(complejoId)
                     .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
             if (complejo.getPropietario() == null || !complejo.getPropietario().getId().equals(requester.getId())) {
