@@ -60,7 +60,7 @@ public class ComplejoControlador {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Crear un nuevo complejo (Solo ADMIN) - Ahora recibe CrearComplejoRequest
+    // Crear un nuevo complejo (Solo ADMIN) - Ahora recibe CrearComplejoRequest completo
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<Complejo> crearComplejo(@RequestBody CrearComplejoRequest request, Authentication authentication) {
@@ -68,8 +68,22 @@ public class ComplejoControlador {
         log.info("POST /api/complejos - Creando nuevo complejo '{}' para propietario '{}' por ADMIN: {}",
                 request.getNombre(), request.getPropietarioUsername(), adminUsername);
         try {
-            // El servicio creará el complejo y asignará el propietario
-            Complejo nuevoComplejo = complejoServicio.crearComplejoParaAdmin(request.getNombre(), request.getPropietarioUsername(), request.getCanchaCounts());
+            // El servicio creará el complejo y asignará el propietario y todos los detalles de canchas
+            Complejo nuevoComplejo = complejoServicio.crearComplejoParaAdmin(
+                    request.getNombre(),
+                    request.getPropietarioUsername(),
+                    request.getDescripcion(),
+                    request.getUbicacion(),
+                    request.getTelefono(),
+                    request.getFotoUrl(),
+                    request.getHorarioApertura(),
+                    request.getHorarioCierre(),
+                    request.getCanchaCounts(),
+                    request.getCanchaPrices(),
+                    request.getCanchaSurfaces(),
+                    request.getCanchaIluminacion(),
+                    request.getCanchaTecho()
+            );
             return new ResponseEntity<>(nuevoComplejo, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear complejo: {}", e.getMessage());

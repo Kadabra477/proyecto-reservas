@@ -6,7 +6,9 @@ import lombok.AllArgsConstructor;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import java.util.Map; // Para el mapa de canchaCounts
+import jakarta.validation.constraints.Email; // Añadido para validación de email
+import java.util.Map;
+import java.time.LocalTime; // Para los horarios
 
 @Data
 @NoArgsConstructor
@@ -15,10 +17,31 @@ public class CrearComplejoRequest {
     @NotBlank(message = "El nombre del complejo es obligatorio")
     private String nombre;
 
-    @NotBlank(message = "El nombre de usuario (email) del propietario es obligatorio")
+    @NotBlank(message = "El email del propietario es obligatorio")
+    @Email(message = "El email del propietario debe ser válido.")
     private String propietarioUsername; // El username (email) del usuario que será dueño del complejo
 
-    // Mapa para la cantidad de canchas por tipo (ej. {"Fútbol 5": 2})
+    // Detalles generales del complejo (ahora se pueden enviar desde el formulario de creación)
+    private String descripcion;
+    private String ubicacion;
+    private String telefono;
+    private String fotoUrl;
+    private LocalTime horarioApertura;
+    private LocalTime horarioCierre;
+
+    // Mapas para la cantidad y detalles de canchas por tipo
     @NotNull(message = "Debe especificar la cantidad de canchas por tipo.")
     private Map<String, Integer> canchaCounts;
+
+    @NotNull(message = "Debe especificar los precios por hora de las canchas.")
+    private Map<String, Double> canchaPrices;
+
+    @NotNull(message = "Debe especificar las superficies de las canchas.")
+    private Map<String, String> canchaSurfaces;
+
+    @NotNull(message = "Debe especificar si las canchas tienen iluminación.")
+    private Map<String, Boolean> canchaIluminacion;
+
+    @NotNull(message = "Debe especificar si las canchas tienen techo.")
+    private Map<String, Boolean> canchaTecho;
 }
