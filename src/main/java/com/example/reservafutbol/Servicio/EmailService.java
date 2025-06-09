@@ -1,6 +1,6 @@
 package com.example.reservafutbol.Servicio;
 
-import jakarta.mail.MessagingException; // Mantenemos la importación por si se usa en otros métodos o internamente
+import jakarta.mail.MessagingException;
 import jakarta.mail.internet.AddressException; // Importamos específicamente AddressException
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.io.ByteArrayInputStream;
-import java.io.UnsupportedEncodingException; // Importa esta excepción
+import java.io.UnsupportedEncodingException;
 import com.example.reservafutbol.Modelo.Reserva; // Asegúrate de importar Reserva si la usas
 import com.example.reservafutbol.Modelo.User;    // Asegúrate de importar User si la usas
 
@@ -53,12 +53,12 @@ public class EmailService {
                 // volver a crear la InternetAddress asegurando la codificación UTF-8 para el nombre personal.
                 this.fromAddress = new InternetAddress(tempParsedAddress.getAddress(), tempParsedAddress.getPersonal(), "UTF-8");
             }
-        } catch (UnsupportedEncodingException | AddressException e) { // <-- CAMBIO CLAVE AQUÍ: Capturamos AddressException
+        } catch (UnsupportedEncodingException | AddressException e) { // Capturamos AddressException
             System.err.println("Error al configurar la dirección de remitente ('FROM') del email. Asegúrate de que 'spring.mail.properties.mail.smtp.from' esté en un formato válido como 'Nombre <email@dominio.com>'. Fallback a 'no-reply@reservafutbol.com'. Error: " + e.getMessage());
             try {
                 // Si la configuración inicial falla, intenta con una dirección de fallback segura.
                 this.fromAddress = new InternetAddress("no-reply@reservafutbol.com", "ReservaFutbol", "UTF-8");
-            } catch (UnsupportedEncodingException fallbackE) { // <-- Aquí MessagingException puede ser lanzado por el constructor si el formato es inválido
+            } catch (UnsupportedEncodingException fallbackE) { // Aquí MessagingException puede ser lanzado por el constructor si el formato es inválido
                 System.err.println("Error crítico: Fallback de dirección de remitente también falló: " + fallbackE.getMessage());
                 throw new RuntimeException("No se pudo inicializar EmailService debido a problemas con la dirección de remitente.", fallbackE);
             }
@@ -115,6 +115,39 @@ public class EmailService {
         mailSender.send(message);
         System.out.println(">>> Email de reseteo de contraseña enviado a: " + to);
     }
+
+    // *** MÉTODO RE-AÑADIDO: sendNewReservationNotification ***
+    // Método para enviar notificaciones de nueva reserva (para administradores/dueños)
+    public void sendNewReservationNotification(Reserva reserva, String toEmail) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setFrom(this.fromAddress); // Usamos la dirección de remitente formateada
+        helper.setTo(toEmail);
+        helper.setSubject("Nueva Reserva en " + reserva.getComplejo().getNombre() + " - ¿Dónde Juego?");
+
+        String emailContent = "<html><body>"
+                + "<h2>¡Nueva Reserva Realizada!</h2>"
+                + "<p>Se ha realizado una nueva reserva para tu complejo:</p>"
+                + "<ul>"
+                + "<li><strong>Complejo:</strong> " + reserva.getComplejo().getNombre() + "</li>"
+                + "<li><strong>Tipo de Cancha:</strong> " + reserva.getTipoCanchaReservada() + "</li>"
+                + "<li><strong>Fecha y Hora:</strong> " + reserva.getFechaHora().toString() + "</li>"
+                + "<li><strong>Cliente:</strong> " + reserva.getCliente() + "</li>"
+                + "<li><strong>Teléfono:</strong> " + reserva.getTelefono() + "</li>"
+                + "<li><strong>DNI:</strong> " + reserva.getDni() + "</li>"
+                + "<li><strong>Método de Pago:</strong> " + reserva.getMetodoPago() + "</li>"
+                + "<li><strong>Precio:</strong> $" + reserva.getPrecio().toString() + "</li>"
+                + "</ul>"
+                + "<p>Por favor, revisa el panel de administración para más detalles.</p>"
+                + "<p>Saludos,<br/>El equipo de ¿Dónde Juego?</p>"
+                + "</body></html>";
+        helper.setText(emailContent, true);
+
+        mailSender.send(message);
+        System.out.println("Notificación de nueva reserva enviada a: " + toEmail);
+    }
+
 
     // Método para enviar comprobante con PDF
     public void enviarComprobanteConPDF(String to, ByteArrayInputStream pdfBytes) throws MessagingException {
