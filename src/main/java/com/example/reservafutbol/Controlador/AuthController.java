@@ -127,13 +127,7 @@ public class AuthController {
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
         roles.add(userRole);
-        nuevoUsuario.setRoles(roles);
-
-        nuevoUsuario.setUbicacion(signUpRequest.getUbicacion());
-        nuevoUsuario.setEdad(signUpRequest.getEdad());
-        nuevoUsuario.setTelefono(signUpRequest.getTelefono());
-        nuevoUsuario.setBio(signUpRequest.getBio());
-
+        nuevoUsuario.setRoles(roles);;
         try {
             usuarioServicio.registerNewUser(nuevoUsuario);
             log.info("Usuario '{}' registrado exitosamente. Email de validación enviado.", signUpRequest.getEmail());
