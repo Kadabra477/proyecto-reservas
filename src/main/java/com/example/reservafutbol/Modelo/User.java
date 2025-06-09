@@ -56,7 +56,7 @@ public class User implements UserDetails {
     private Integer edad;
     @Builder.Default
     private Boolean completoPerfil = false;
-    private String telefono;
+    private String telefono; // Añadido para el perfil
     @Column(columnDefinition = "TEXT")
     private String bio;
     private String profilePictureUrl;

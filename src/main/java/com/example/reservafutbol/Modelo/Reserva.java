@@ -11,14 +11,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-// import java.util.Date; // Removido, ya que usas LocalDateTime
 import java.util.List;
 import java.util.Set;
 
 @Entity
 @Table(name = "reservas")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
-@Builder // Añadir @Builder aquí
+@Builder // Añadido @Builder aquí
 public class Reserva {
 
     @Id
@@ -49,9 +48,10 @@ public class Reserva {
     @Column(nullable = true) // Puede ser null si el complejo no numera sus instancias idénticas
     private String nombreCanchaAsignada;
 
-    private String cliente;
+    private String cliente; // Contendrá "Nombre Apellido"
 
-    // Nuevo: DNI del cliente. Se asume String por la validación de RegEx
+    // Se mantiene como String para flexibilidad, aunque el DTO envíe Integer
+    // La conversión se puede hacer en el controlador o servicio si se desea validar/guardar como numérico
     private String dni;
 
     private String telefono;
@@ -93,14 +93,19 @@ public class Reserva {
     public void actualizarEstadoGeneral() {
         if (Boolean.TRUE.equals(this.pagada)) {
             this.estado = "pagada";
-        } else if ("efectivo".equalsIgnoreCase(this.metodoPago) && (this.estado == null || "pendiente".equalsIgnoreCase(this.estado))) {
-            this.estado = "pendiente_pago_efectivo";
+        } else if ("efectivo".equalsIgnoreCase(this.metodoPago)) {
+            // Si es efectivo y no está pagada y el estado no es ya rechazado/cancelado
+            if (!"rechazada_pago_mp".equalsIgnoreCase(this.estado) && !"cancelada".equalsIgnoreCase(this.estado)) {
+                this.estado = "pendiente_pago_efectivo";
+            }
         } else if ("mercadopago".equalsIgnoreCase(this.metodoPago) && !Boolean.TRUE.equals(this.pagada)) {
+            // Si es MP y no está pagada y el estado no es ya rechazado/cancelado
             if (!"rechazada_pago_mp".equalsIgnoreCase(this.estado) && !"cancelada".equalsIgnoreCase(this.estado)) {
                 this.estado = "pendiente_pago_mp";
             }
         } else {
-            if (this.estado == null || this.estado.isBlank()) {
+            // Estado por defecto si no encaja con las anteriores, por ejemplo si se crea sin método de pago o se cancela.
+            if (this.estado == null || this.estado.isBlank() || this.estado.equals("pendiente")) { // Mantener 'pendiente' si ya lo es
                 this.estado = "pendiente";
             }
         }

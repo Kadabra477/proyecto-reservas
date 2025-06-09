@@ -53,7 +53,6 @@ public class UsuarioServicio implements UserDetailsService {
         return usuarioRepositorio.findById(id);
     }
 
-    // Nuevo método: Listar todos los usuarios ACTIVOS (para el AdminPanel de gestión de usuarios)
     @Transactional(readOnly = true)
     public List<User> findAllEnabledUsers() {
         log.info("Listando todos los usuarios habilitados.");
@@ -134,6 +133,7 @@ public class UsuarioServicio implements UserDetailsService {
         Optional<User> userOptional = usuarioRepositorio.findByResetPasswordToken(token);
         if (userOptional.isPresent()) {
             User usuario = userOptional.get();
+            // CAMBIO AQUÍ: Corregido el nombre del método getter
             if (usuario.getResetPasswordTokenExpiryDate() != null && usuario.getResetPasswordTokenExpiryDate().isAfter(LocalDateTime.now())) {
                 log.info("Token de reseteo {} válido para usuario {}", token, usuario.getUsername());
                 return Optional.of(usuario);
@@ -157,7 +157,7 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional
-    public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
+    public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio, String telefono) {
         log.info("Actualizando perfil del usuario: {}", user.getUsername());
 
         if (nombreCompleto != null) {
@@ -171,6 +171,9 @@ public class UsuarioServicio implements UserDetailsService {
         }
         if (bio != null) {
             user.setBio(bio);
+        }
+        if (telefono != null) {
+            user.setTelefono(telefono);
         }
 
         usuarioRepositorio.save(user);

@@ -146,21 +146,6 @@ public class ReservaControlador {
         }
         String username = authentication.getName();
 
-        // Validaciones básicas del DTO
-        if (dto.getComplejoId() == null || dto.getTipoCancha() == null || dto.getTipoCancha().isBlank() ||
-                dto.getFecha() == null || dto.getHora() == null ||
-                dto.getMetodoPago() == null || dto.getMetodoPago().isBlank() || dto.getTelefono() == null || dto.getTelefono().isBlank() ||
-                dto.getNombre() == null || dto.getNombre().isBlank() || dto.getApellido() == null || dto.getApellido().isBlank()) {
-            log.warn("Faltan datos requeridos en el DTO de reserva.");
-            return ResponseEntity.badRequest().body("Faltan datos requeridos para la reserva.");
-        }
-        // Corrección: el DNI debe ser numérico y con longitud específica
-        if (dto.getDni() == null || !String.valueOf(dto.getDni()).matches("^\\d{7,8}$")) { // Convertir a String para la validación
-            log.warn("Formato de DNI inválido: {}", dto.getDni());
-            return ResponseEntity.badRequest().body("El DNI debe contener 7 u 8 dígitos numéricos.");
-        }
-
-
         // Buscar el usuario autenticado
         User usuario = usuarioServicio.findByUsername(username)
                 .orElseThrow(() -> {
@@ -199,8 +184,11 @@ public class ReservaControlador {
         nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
+
+        // CONSTRUIR EL CAMPO CLIENTE A PARTIR DE NOMBRE Y APELLIDO DEL DTO
         nuevaReserva.setCliente(dto.getNombre().trim() + " " + dto.getApellido().trim());
-        nuevaReserva.setDni(dto.getDni()); // Asegúrate de que el DTO tenga un campo DNI
+        nuevaReserva.setDni(String.valueOf(dto.getDni())); // Convertir Integer a String para el campo DNI en el modelo Reserva
+
         nuevaReserva.setPrecio(BigDecimal.valueOf(precioPorHora)); // Asignar el precio obtenido del complejo
 
         try {
@@ -216,7 +204,8 @@ public class ReservaControlador {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         } catch (Exception e) {
             log.error("Error inesperado al guardar reserva:", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al guardar la reserva.");
+            // Mensaje de error más genérico para el usuario
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al guardar la reserva. Por favor, intenta de nuevo.");
         }
     }
 
@@ -305,7 +294,7 @@ public class ReservaControlador {
     }
 
     @GetMapping(value = "/{reservaId}/pdf-comprobante", produces = MediaType.APPLICATION_PDF_VALUE)
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER', 'USER')") // Permitir a los usuarios ver su propio PDF
     public ResponseEntity<InputStreamResource> generarComprobantePdf(@PathVariable Long reservaId, Authentication authentication) {
         String username = authentication.getName();
         log.info("GET /api/reservas/{}/pdf-comprobante por usuario: {}", reservaId, username);
@@ -321,16 +310,19 @@ public class ReservaControlador {
             Reserva reserva = reservaOptional.get();
 
             // --- Lógica de Autorización a Nivel de Recurso ---
-            // Un ADMIN puede acceder a cualquier PDF. Un COMPLEX_OWNER solo si la reserva es de su complejo.
             User requester = usuarioServicio.findByUsername(username)
                     .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + username));
 
-            // Importante: No se necesita importar ERole aquí, ya que se verifica directamente contra el nombre del rol.
-            // Si el requester NO es ADMIN, debe ser propietario del complejo de la reserva
-            if (requester.getRoles().stream().noneMatch(r -> r.getName().name().equals("ROLE_ADMIN"))) { // Usar .name() para comparar el String del enum
-                if (reserva.getComplejo() == null || reserva.getComplejo().getPropietario() == null || !reserva.getComplejo().getPropietario().getId().equals(requester.getId())) {
-                    throw new SecurityException("Acceso denegado: No tienes permisos para ver este comprobante.");
-                }
+            boolean isUser = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_USER"));
+            boolean isAdmin = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_ADMIN"));
+            boolean isOwner = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_COMPLEX_OWNER"));
+
+            // Reglas de acceso al PDF:
+            // - ADMIN puede ver cualquier PDF
+            // - COMPLEX_OWNER puede ver PDF de reservas de sus complejos
+            // - USER puede ver PDF de sus propias reservas
+            if (!isAdmin && !(isOwner && reserva.getComplejo() != null && reserva.getComplejo().getPropietario() != null && reserva.getComplejo().getPropietario().getId().equals(requester.getId())) && !(isUser && reserva.getUsuario() != null && reserva.getUsuario().getId().equals(requester.getId()))) {
+                throw new SecurityException("Acceso denegado: No tienes permisos para ver este comprobante.");
             }
 
             ByteArrayInputStream bis = pdfGeneratorService.generarPDFReserva(reserva);

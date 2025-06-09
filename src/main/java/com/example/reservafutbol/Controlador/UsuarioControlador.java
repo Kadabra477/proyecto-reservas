@@ -52,14 +52,29 @@ public class UsuarioControlador {
                 .map(item -> item.getAuthority())
                 .collect(Collectors.toList());
 
+        // Lógica para intentar dividir nombreCompleto en nombre y apellido para el DTO
+        String nombre = "";
+        String apellido = "";
+        if (user.getNombreCompleto() != null && !user.getNombreCompleto().isBlank()) {
+            // Divide por el primer espacio y toma la primera parte como nombre, el resto como apellido
+            String[] partesNombre = user.getNombreCompleto().trim().split("\\s+", 2);
+            nombre = partesNombre[0];
+            if (partesNombre.length > 1) {
+                apellido = partesNombre[1];
+            }
+        }
+
         PerfilDTO perfilDTO = new PerfilDTO(
-                user.getNombreCompleto(),
+                user.getNombreCompleto(), // Campo existente, si aún se usa en frontend
+                nombre,                   // Campo 'nombre' para precarga en formularios
+                apellido,                 // Campo 'apellido' para precarga en formularios
                 user.getUbicacion(),
                 user.getEdad(),
                 user.getBio(),
-                user.getUsername(),
+                user.getUsername(),       // Esto es el email del usuario
                 user.getProfilePictureUrl(),
-                roles
+                roles,
+                user.getTelefono()        // Incluir el teléfono
         );
 
         return ResponseEntity.ok(perfilDTO);
@@ -73,12 +88,17 @@ public class UsuarioControlador {
         }
 
         User user = optUser.get();
+        // Asegúrate de que tu servicio `updateUserProfile` puede manejar el teléfono
+        // Si tu modelo `User` tiene campos `nombre` y `apellido` separados, y el `PerfilDTO` los envía,
+        // deberías pasar `perfilDTO.getNombre()` y `perfilDTO.getApellido()` aquí.
+        // Por ahora, `nombreCompleto` es lo que se actualiza.
         usuarioServicio.updateUserProfile(
                 user,
-                perfilDTO.getNombreCompleto(),
+                perfilDTO.getNombreCompleto(), // Se asume que el frontend envía el nombreCompleto actualizado
                 perfilDTO.getUbicacion(),
                 perfilDTO.getEdad(),
-                perfilDTO.getBio()
+                perfilDTO.getBio(),
+                perfilDTO.getTelefono() // Pasar el teléfono al servicio
         );
 
         return ResponseEntity.ok("Perfil actualizado correctamente.");
@@ -115,8 +135,7 @@ public class UsuarioControlador {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<User>> getAllUsers() {
         log.info("GET /api/users - Obteniendo todos los usuarios (solo ADMIN).");
-        // CORRECCIÓN AQUÍ: Llamar al método correcto en UsuarioServicio
-        List<User> users = usuarioServicio.findAllEnabledUsers(); // Cambiado de findAllUsers() a findAllEnabledUsers()
+        List<User> users = usuarioServicio.findAllEnabledUsers();
         return ResponseEntity.ok(users);
     }
 
@@ -153,7 +172,9 @@ public class UsuarioControlador {
             // Asegúrate de que el ADMIN no se quite a sí mismo el rol de ADMIN si no tiene otros ADMINs
             // Esta lógica puede ser más compleja, pero por ahora, una simple verificación de IDs
             if (user.getId().equals(currentAdmin.getId()) && !rolesToAssign.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN a ti mismo si eres el único ADMIN.");
+                // Puedes implementar una lógica más robusta si quieres, por ejemplo,
+                // si hay más de un ADMIN, permitirle quitarse el rol.
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN a ti mismo.");
             }
 
             user.setRoles(rolesToAssign);
