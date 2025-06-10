@@ -48,16 +48,15 @@ public class EmailService {
                 this.fromAddress = new InternetAddress(tempParsedAddress.getAddress(), tempParsedAddress.getPersonal(), "UTF-8");
             }
         } catch (UnsupportedEncodingException | AddressException e) {
-            // Si hay un error al parsear la dirección configurada (ej. Missing '>', Extra route-addr)
             System.err.println("Error al configurar la dirección de remitente ('FROM') del email desde la variable de entorno. " +
                     "Asegúrate de que '${spring.mail.properties.mail.smtp.from}' esté en un formato válido (ej. 'nombre@dominio.com' o 'Nombre <email@dominio.com>'). " +
-                    "Intentando usar dirección de fallback: 'no-reply@reservafutbol.com'. Error original: " + e.getMessage());
-            e.printStackTrace(); // Imprime el stack trace del error de parseo del FROM.
+                    "Intentando usar dirección de fallback: 'hernandimichele477@gmail.com' (TU DIRECCIÓN VERIFICADA). Error original: " + e.getMessage());
+            e.printStackTrace();
 
             try {
-                // Forzamos el uso de una dirección de fallback para que la aplicación pueda iniciar.
-                this.fromAddress = new InternetAddress("no-reply@reservafutbol.com", "ReservaFutbol", "UTF-8");
-            } catch (UnsupportedEncodingException fallbackE) {
+                // Forzamos el uso de tu dirección VERIFICADA para que la aplicación pueda iniciar y enviar correos.
+                this.fromAddress = new InternetAddress("hernandimichele477@gmail.com", "ReservaFutbol", "UTF-8"); // <--- CAMBIO CLAVE AQUÍ
+            } catch (UnsupportedEncodingException fallbackE) { // Eliminamos MessagingException del catch, como ya habíamos discutido
                 System.err.println("Error CRÍTICO: Fallback de dirección de remitente también falló: " + fallbackE.getMessage());
                 fallbackE.printStackTrace();
                 throw new RuntimeException("No se pudo inicializar EmailService. La dirección de remitente configurada y la de fallback son inválidas.", fallbackE);
