@@ -68,7 +68,7 @@ public class EmailService {
         helper.setTo(to);
         helper.setSubject("Verifica tu cuenta en ¿Dónde Juego?");
 
-        String verificationLink = frontendUrl + "/verify-account?token=" + verificationToken;
+        String verificationLink = backendUrl + "/api/auth/validate?token=" + verificationToken;
 
         String content = "<html><body>"
                 + "<h2>¡Hola, " + username + "!</h2>"
