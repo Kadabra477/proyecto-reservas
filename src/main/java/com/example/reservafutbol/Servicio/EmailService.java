@@ -58,7 +58,6 @@ public class EmailService {
 
 
     // Método para enviar email de verificación de cuenta (usando MimeMessageHelper para HTML)
-    // *** CAMBIO TEMPORAL: Eliminado el try-catch interno para propagar la excepción completa ***
     public void sendVerificationEmail(String to, String username, String verificationToken) throws MessagingException {
         MimeMessage message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -79,9 +78,15 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        // AQUI ES DONDE OCURRE EL POSIBLE FALLO REAL DE CONEXIÓN/AUTENTICACIÓN
-        mailSender.send(message);
-        System.out.println("Email de verificación enviado a: " + to);
+        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
+        try {
+            mailSender.send(message);
+            System.out.println("Email de verificación enviado a: " + to);
+        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+            System.err.println("Error REAL al enviar email de verificación a " + to + ": " + e.getMessage());
+            e.printStackTrace(); // <-- Imprimimos el stack trace completo
+            throw new MessagingException("Fallo en el envío del correo de verificación: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+        }
     }
 
     // Método para enviar email de recuperación de contraseña (usando MimeMessageHelper para HTML)
@@ -105,8 +110,15 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        mailSender.send(message);
-        System.out.println(">>> Email de reseteo de contraseña enviado a: " + to);
+        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
+        try {
+            mailSender.send(message);
+            System.out.println(">>> Email de reseteo de contraseña enviado a: " + to);
+        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+            System.err.println("Error REAL al enviar email de reseteo a " + to + ": " + e.getMessage());
+            e.printStackTrace(); // <-- Imprimimos el stack trace completo
+            throw new MessagingException("Fallo en el envío del correo de reseteo: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+        }
     }
 
     // *** MÉTODO RE-AÑADIDO: sendNewReservationNotification ***
@@ -136,8 +148,15 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        mailSender.send(message);
-        System.out.println("Notificación de nueva reserva enviada a: " + toEmail);
+        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
+        try {
+            mailSender.send(message);
+            System.out.println("Notificación de nueva reserva enviada a: " + toEmail);
+        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+            System.err.println("Error REAL al enviar notificación de nueva reserva a " + toEmail + ": " + e.getMessage());
+            e.printStackTrace(); // <-- Imprimimos el stack trace completo
+            throw new MessagingException("Fallo en el envío de notificación de reserva: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+        }
     }
 
 
@@ -154,7 +173,14 @@ public class EmailService {
         InputStreamSource adjunto = new ByteArrayResource(pdfBytes.readAllBytes());
         helper.addAttachment("comprobante_reserva.pdf", adjunto);
 
-        mailSender.send(mensaje);
-        System.out.println(">>> Comprobante enviado por email a: " + to);
+        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
+        try {
+            mailSender.send(mensaje);
+            System.out.println(">>> Comprobante enviado por email a: " + to);
+        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+            System.err.println("Error REAL al enviar comprobante PDF a " + to + ": " + e.getMessage());
+            e.printStackTrace(); // <-- Imprimimos el stack trace completo
+            throw new MessagingException("Fallo en el envío del comprobante PDF: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+        }
     }
 }
