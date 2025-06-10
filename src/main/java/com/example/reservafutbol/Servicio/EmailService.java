@@ -35,23 +35,32 @@ public class EmailService {
 
     private InternetAddress fromAddress;
 
+    // Constructor para inicializar la dirección de remitente
     @Autowired
     public EmailService(@Value("${spring.mail.properties.mail.smtp.from}") String configuredFromEmail) {
         try {
+            // Intentamos parsear la dirección configurada.
+            // Si tiene un nombre personal, lo usamos. Si no, agregamos uno por defecto.
             InternetAddress tempParsedAddress = new InternetAddress(configuredFromEmail);
-
             if (tempParsedAddress.getPersonal() == null || tempParsedAddress.getPersonal().isEmpty()) {
                 this.fromAddress = new InternetAddress(configuredFromEmail, "ReservaFutbol", "UTF-8");
             } else {
                 this.fromAddress = new InternetAddress(tempParsedAddress.getAddress(), tempParsedAddress.getPersonal(), "UTF-8");
             }
         } catch (UnsupportedEncodingException | AddressException e) {
-            System.err.println("Error al configurar la dirección de remitente ('FROM') del email. Asegúrate de que 'spring.mail.properties.mail.smtp.from' esté en un formato válido como 'Nombre <email@dominio.com>'. Fallback a 'no-reply@reservafutbol.com'. Error: " + e.getMessage());
+            // Si hay un error al parsear la dirección configurada (ej. Missing '>', Extra route-addr)
+            System.err.println("Error al configurar la dirección de remitente ('FROM') del email desde la variable de entorno. " +
+                    "Asegúrate de que '${spring.mail.properties.mail.smtp.from}' esté en un formato válido (ej. 'nombre@dominio.com' o 'Nombre <email@dominio.com>'). " +
+                    "Intentando usar dirección de fallback: 'no-reply@reservafutbol.com'. Error original: " + e.getMessage());
+            e.printStackTrace(); // Imprime el stack trace del error de parseo del FROM.
+
             try {
+                // Forzamos el uso de una dirección de fallback para que la aplicación pueda iniciar.
                 this.fromAddress = new InternetAddress("no-reply@reservafutbol.com", "ReservaFutbol", "UTF-8");
             } catch (UnsupportedEncodingException fallbackE) {
-                System.err.println("Error crítico: Fallback de dirección de remitente también falló: " + fallbackE.getMessage());
-                throw new RuntimeException("No se pudo inicializar EmailService debido a problemas con la dirección de remitente.", fallbackE);
+                System.err.println("Error CRÍTICO: Fallback de dirección de remitente también falló: " + fallbackE.getMessage());
+                fallbackE.printStackTrace();
+                throw new RuntimeException("No se pudo inicializar EmailService. La dirección de remitente configurada y la de fallback son inválidas.", fallbackE);
             }
         }
     }
@@ -62,7 +71,7 @@ public class EmailService {
         MimeMessage message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-        helper.setFrom(this.fromAddress);
+        helper.setFrom(this.fromAddress); // Usamos la dirección de remitente formateada (que ahora es la de fallback si hubo error inicial)
         helper.setTo(to);
         helper.setSubject("Verifica tu cuenta en ¿Dónde Juego?");
 
@@ -78,14 +87,13 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
         try {
             mailSender.send(message);
             System.out.println("Email de verificación enviado a: " + to);
-        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+        } catch (Exception e) {
             System.err.println("Error REAL al enviar email de verificación a " + to + ": " + e.getMessage());
-            e.printStackTrace(); // <-- Imprimimos el stack trace completo
-            throw new MessagingException("Fallo en el envío del correo de verificación: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+            e.printStackTrace();
+            throw new MessagingException("Fallo en el envío del correo de verificación: " + e.getMessage(), e);
         }
     }
 
@@ -110,14 +118,13 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
         try {
             mailSender.send(message);
             System.out.println(">>> Email de reseteo de contraseña enviado a: " + to);
-        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+        } catch (Exception e) {
             System.err.println("Error REAL al enviar email de reseteo a " + to + ": " + e.getMessage());
-            e.printStackTrace(); // <-- Imprimimos el stack trace completo
-            throw new MessagingException("Fallo en el envío del correo de reseteo: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+            e.printStackTrace();
+            throw new MessagingException("Fallo en el envío del correo de reseteo: " + e.getMessage(), e);
         }
     }
 
@@ -128,7 +135,7 @@ public class EmailService {
 
         helper.setFrom(this.fromAddress);
         helper.setTo(toEmail);
-        helper.setSubject("Nueva Reserva en " + reserva.getComplejo().getNombre() + " - ¿Dónde Juego?");
+        helper.setSubject("Nueva Reserva en " + reserva.getComplejo().getNombre() + " - ¿Dónde Juego?"); // <-- CORRECCIÓN AQUÍ: helper.setSubject
 
         String emailContent = "<html><body>"
                 + "<h2>¡Nueva Reserva Realizada!</h2>"
@@ -148,14 +155,13 @@ public class EmailService {
                 + "</body></html>";
         helper.setText(emailContent, true);
 
-        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
         try {
             mailSender.send(message);
             System.out.println("Notificación de nueva reserva enviada a: " + toEmail);
-        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+        } catch (Exception e) {
             System.err.println("Error REAL al enviar notificación de nueva reserva a " + toEmail + ": " + e.getMessage());
-            e.printStackTrace(); // <-- Imprimimos el stack trace completo
-            throw new MessagingException("Fallo en el envío de notificación de reserva: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+            e.printStackTrace();
+            throw new MessagingException("Fallo en el envío de notificación de reserva: " + e.getMessage(), e);
         }
     }
 
@@ -173,14 +179,13 @@ public class EmailService {
         InputStreamSource adjunto = new ByteArrayResource(pdfBytes.readAllBytes());
         helper.addAttachment("comprobante_reserva.pdf", adjunto);
 
-        // *** CAMBIO: Se reintroduce el try-catch aquí para que EmailService capture MessagingException ***
         try {
             mailSender.send(mensaje);
             System.out.println(">>> Comprobante enviado por email a: " + to);
-        } catch (Exception e) { // Capturamos Exception genérica para loguear el detalle
+        } catch (Exception e) {
             System.err.println("Error REAL al enviar comprobante PDF a " + to + ": " + e.getMessage());
-            e.printStackTrace(); // <-- Imprimimos el stack trace completo
-            throw new MessagingException("Fallo en el envío del comprobante PDF: " + e.getMessage(), e); // Volvemos a lanzar como MessagingException
+            e.printStackTrace();
+            throw new MessagingException("Fallo en el envío del comprobante PDF: " + e.getMessage(), e);
         }
     }
 }
