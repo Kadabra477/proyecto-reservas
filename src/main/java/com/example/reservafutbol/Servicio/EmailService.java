@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+
 import com.example.reservafutbol.Modelo.Reserva;
 
 @Service
@@ -153,20 +155,20 @@ public class EmailService {
             throw new MessagingException("Fallo al enviar notificación de reserva", e);
         }
     }
-
     public void enviarComprobanteConPDF(String to, ByteArrayInputStream pdfBytes) throws MessagingException {
         MimeMessage mensaje = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(mensaje, true);
+        MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
 
         helper.setFrom(this.fromAddress);
         helper.setTo(to);
         helper.setSubject("Comprobante de reserva de cancha");
         helper.setText("Hola! Te adjuntamos el comprobante de tu reserva. Mostralo al llegar. ¡Gracias por reservar!");
 
-        InputStreamSource adjunto = new ByteArrayResource(pdfBytes.readAllBytes());
-        helper.addAttachment("comprobante_reserva.pdf", adjunto);
-
         try {
+            byte[] pdfData = pdfBytes.readAllBytes();
+            InputStreamSource adjunto = new ByteArrayResource(pdfData);
+            helper.addAttachment("comprobante_reserva.pdf", adjunto);
+
             mailSender.send(mensaje);
             System.out.println("✔ Comprobante enviado a: " + to);
         } catch (Exception e) {
