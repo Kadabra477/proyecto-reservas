@@ -138,9 +138,9 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/verify-account") // Endpoint para verificación de cuenta
+    @GetMapping("/validate") // <--- CAMBIO AQUÍ: Cambiado de "/verify-account" a "/validate"
     public ResponseEntity<String> verifyUser(@RequestParam String token) {
-        log.info("GET /api/auth/verify-account - Intentando validar cuenta con token.");
+        log.info("GET /api/auth/validate - Intentando validar cuenta con token."); // Actualiza el log también
         try {
             boolean activated = usuarioServicio.activateUser(token);
             if (activated) {
