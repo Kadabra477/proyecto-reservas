@@ -4,10 +4,10 @@ import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
 import com.example.reservafutbol.Modelo.ERole;
 import com.example.reservafutbol.Modelo.Role;
-import com.example.reservafutbol.Repositorio.RoleRepositorio; // Asegúrate de que esta importación esté
-import java.util.HashSet; // Para Set y HashSet
-import java.util.Set;     // Para Set
-import java.util.stream.Collectors; // Para Collectors-
+import com.example.reservafutbol.Repositorio.RoleRepositorio;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +36,7 @@ public class UsuarioServicio implements UserDetailsService {
     @Autowired
     private EmailService emailService;
 
-    @Autowired // <-- Esta inyección es esencial para usar roleRepositorio
+    @Autowired
     private RoleRepositorio roleRepositorio;
 
     @Override
@@ -84,14 +84,11 @@ public class UsuarioServicio implements UserDetailsService {
             user.setCompletoPerfil(false);
         }
 
-        // --- Asignar el rol ROLE_USER por defecto al registrarse ---
-        // Asegúrate que esta lógica está completa en tu registerNewUser actual
         Set<Role> roles = new HashSet<>();
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
         roles.add(userRole);
-        user.setRoles(roles); // Establece los roles antes de guardar
-        // --- Fin de asignación de rol por defecto ---
+        user.setRoles(roles);
 
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario registrado y guardado: {}", savedUser.getUsername());
@@ -176,7 +173,8 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional
-    public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio, String telefono) {
+    // <-- CAMBIO: Eliminado el parámetro 'telefono' -->
+    public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
         log.info("Actualizando perfil del usuario: {}", user.getUsername());
 
         if (nombreCompleto != null) {
@@ -191,9 +189,10 @@ public class UsuarioServicio implements UserDetailsService {
         if (bio != null) {
             user.setBio(bio);
         }
-        if (telefono != null) {
-            user.setTelefono(telefono);
-        }
+        // <-- ELIMINAR: Ya no se maneja el campo telefono aquí -->
+        // if (telefono != null) {
+        //     user.setTelefono(telefono);
+        // }
 
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
@@ -209,7 +208,7 @@ public class UsuarioServicio implements UserDetailsService {
         log.info("Foto de perfil actualizada para usuario: {}", user.getUsername());
     }
 
-    // --- NUEVO MÉTODO PARA ACTUALIZAR ROLES CON LÓGICA DE EXCLUSIÓN ---
+    // --- Método updateUserRoles (ya implementado y corregido) ---
     @Transactional
     public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
         User user = usuarioRepositorio.findById(userId)
@@ -230,29 +229,20 @@ public class UsuarioServicio implements UserDetailsService {
             rolesToSet.add(role);
         }
 
-        // Si se va a asignar ADMIN, quitar COMPLEX_OWNER
         if (hasAdmin) {
             log.info("Asignando ROLE_ADMIN a usuario {}. Eliminando ROLE_COMPLEX_OWNER si existe.", user.getUsername());
             rolesToSet.removeIf(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER));
-            // Asegurarse de que ROLE_USER se mantenga si no hay otros roles, o si es un admin puro.
-            // Si el admin va a ser sólo ADMIN, no necesita ROLE_USER.
-            // rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER).orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."))); // Descomentar si los ADMINS SIEMPRE deben ser también USER.
-        }
-        // Si se va a asignar COMPLEX_OWNER, quitar ADMIN
-        else if (hasComplexOwner) {
+        } else if (hasComplexOwner) {
             log.info("Asignando ROLE_COMPLEX_OWNER a usuario {}. Eliminando ROLE_ADMIN si existe.", user.getUsername());
             rolesToSet.removeIf(r -> r.getName().equals(ERole.ROLE_ADMIN));
         }
 
-        // Asegurarse de que si no se asigna ni ADMIN ni COMPLEX_OWNER, al menos tenga ROLE_USER
-        // Esto es un safeguard para que los usuarios siempre tengan un rol base.
         if (rolesToSet.isEmpty()) {
             Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
             rolesToSet.add(userRole);
             log.warn("Usuario {} quedó sin roles específicos, se le asignó ROLE_USER por defecto.", user.getUsername());
         }
-
 
         user.setRoles(rolesToSet);
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
