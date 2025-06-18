@@ -19,6 +19,5 @@ public class PerfilDTO {
     private String bio;
     private String email; // Se mapea desde el 'username' del User
     private String profilePictureUrl;
-    private List<String> roles; // Lista de roles del usuario
-    private String telefono; // NUEVO: Campo para el teléfono
+    private List<String> roles; // Lista de roles del usuario// NUEVO: Campo para el teléfono
 }

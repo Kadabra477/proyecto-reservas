@@ -73,8 +73,7 @@ public class UsuarioControlador {
                 user.getBio(),
                 user.getUsername(),       // Esto es el email del usuario
                 user.getProfilePictureUrl(),
-                roles,
-                user.getTelefono()        // Incluir el teléfono
+                roles
         );
 
         return ResponseEntity.ok(perfilDTO);
@@ -97,8 +96,7 @@ public class UsuarioControlador {
                 perfilDTO.getNombreCompleto(), // Se asume que el frontend envía el nombreCompleto actualizado
                 perfilDTO.getUbicacion(),
                 perfilDTO.getEdad(),
-                perfilDTO.getBio(),
-                perfilDTO.getTelefono() // Pasar el teléfono al servicio
+                perfilDTO.getBio()
         );
 
         return ResponseEntity.ok("Perfil actualizado correctamente.");
