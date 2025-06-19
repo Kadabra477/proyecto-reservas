@@ -45,7 +45,7 @@ public class SecurityConfig {
     @Value("${frontend.url}")
     private String frontendUrl;
 
-    @Value("${BACKEND_URL_BASE}")
+    @Value("${BACKEND_URL}")
     private String backendUrlBase;
 
     public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
