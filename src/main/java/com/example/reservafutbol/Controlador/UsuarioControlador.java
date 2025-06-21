@@ -133,7 +133,7 @@ public class UsuarioControlador {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<User>> getAllUsers() {
         log.info("GET /api/users - Obteniendo todos los usuarios (solo ADMIN).");
-        List<User> users = usuarioServicio.findAllEnabledUsers();
+        List<User> users = usuarioServicio.findAllUsers();
         return ResponseEntity.ok(users);
     }
 
