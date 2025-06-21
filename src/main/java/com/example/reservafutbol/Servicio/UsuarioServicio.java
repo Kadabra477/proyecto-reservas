@@ -34,7 +34,7 @@ public class UsuarioServicio implements UserDetailsService {
     private UsuarioRepositorio usuarioRepositorio;
 
     @Autowired
-    private EmailService emailService;
+    private EmailService emailService; // Mantener si se usa para resetear contraseña, etc.
 
     @Autowired
     private RoleRepositorio roleRepositorio;
@@ -65,9 +65,10 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional(readOnly = true)
-    public List<User> findAllEnabledUsers() {
-        log.info("Listando todos los usuarios habilitados.");
-        return usuarioRepositorio.findAllByEnabled(true);
+    // <-- CAMBIO: Ya no se filtra por enabled=true, se listan todos para que el admin pueda ver los inactivos -->
+    public List<User> findAllUsers() { // Cambiado el nombre del método para mayor claridad
+        log.info("Listando todos los usuarios (habilitados e inhabilitados).");
+        return usuarioRepositorio.findAll();
     }
 
     @Transactional
@@ -78,8 +79,10 @@ public class UsuarioServicio implements UserDetailsService {
 
     @Transactional
     public User registerNewUser(User user) {
-        user.setEnabled(false);
-        user.setVerificationToken(UUID.randomUUID().toString());
+        // <-- CAMBIO CRÍTICO: Usuario INHABILITADO por defecto y SIN token de verificación -->
+        user.setEnabled(false); // La cuenta no estará activa hasta que un admin la habilite
+        user.setVerificationToken(null); // No se genera token si no hay email de verificación
+
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
@@ -91,36 +94,38 @@ public class UsuarioServicio implements UserDetailsService {
         user.setRoles(roles);
 
         User savedUser = usuarioRepositorio.save(user);
-        log.info("Usuario registrado y guardado: {}", savedUser.getUsername());
+        log.info("Usuario '{}' registrado y guardado (PENDIENTE DE ACTIVACIÓN ADMIN).", savedUser.getUsername());
 
-        try {
-            emailService.sendVerificationEmail(savedUser.getUsername(), savedUser.getNombreCompleto(), savedUser.getVerificationToken());
-            log.info("Email de validación enviado a {}", savedUser.getUsername());
-        } catch (MessagingException e) {
-            log.error("Error al enviar email de verificación a {}: {}", savedUser.getUsername(), e.getMessage());
-            throw new RuntimeException("Fallo al enviar el email de verificación.", e);
-        }
+        // <-- ELIMINAR: El envío del email de verificación ya no es necesario -->
+        // try {
+        //     emailService.sendVerificationEmail(savedUser.getUsername(), savedUser.getNombreCompleto(), savedUser.getVerificationToken());
+        //     log.info("Email de validación enviado a {}", savedUser.getUsername());
+        // } catch (MessagingException e) {
+        //     log.error("Error al enviar email de verificación a {}: {}", savedUser.getUsername(), e.getMessage());
+        //     throw new RuntimeException("Fallo al enviar el email de verificación.", e);
+        // }
         return savedUser;
     }
 
+    // <-- CAMBIO CRÍTICO: Método activateUser ahora toma Long userId para activación por admin -->
     @Transactional
-    public boolean activateUser(String token) {
-        log.info("Intentando activar usuario con token: {}", token);
-        Optional<User> userOptional = usuarioRepositorio.findByVerificationToken(token);
+    public boolean activateUser(Long userId) { // Toma el ID del usuario, no un token
+        log.info("Intentando activar usuario con ID: {} (por administrador).", userId);
+        Optional<User> userOptional = usuarioRepositorio.findById(userId); // Buscar por ID
         if (userOptional.isPresent()) {
             User usuario = userOptional.get();
             if (usuario.isEnabled()) {
-                log.warn("Usuario con token {} ya estaba activado.", token);
+                log.warn("Usuario con ID {} ya estaba activado.", userId);
                 return true;
             }
             usuario.setEnabled(true);
-            usuario.setVerificationToken(null);
+            usuario.setVerificationToken(null); // Asegurarse que cualquier token residual sea null
             usuarioRepositorio.save(usuario);
-            log.info("Usuario {} activado exitosamente.", usuario.getUsername());
+            log.info("Usuario {} (ID {}) activado exitosamente por administrador.", usuario.getUsername(), userId);
             return true;
         }
-        log.warn("Token de activación no encontrado o inválido: {}", token);
-        return false;
+        log.warn("Usuario con ID {} no encontrado para activación por administrador.", userId);
+        throw new UsernameNotFoundException("Usuario no encontrado con ID: " + userId); // Lanzar excepción si no se encuentra
     }
 
     @Transactional
@@ -173,7 +178,6 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional
-    // <-- CAMBIO: Eliminado el parámetro 'telefono' -->
     public void updateUserProfile(User user, String nombreCompleto, String ubicacion, Integer edad, String bio) {
         log.info("Actualizando perfil del usuario: {}", user.getUsername());
 
@@ -189,11 +193,6 @@ public class UsuarioServicio implements UserDetailsService {
         if (bio != null) {
             user.setBio(bio);
         }
-        // <-- ELIMINAR: Ya no se maneja el campo telefono aquí -->
-        // if (telefono != null) {
-        //     user.setTelefono(telefono);
-        // }
-
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
     }
@@ -208,7 +207,6 @@ public class UsuarioServicio implements UserDetailsService {
         log.info("Foto de perfil actualizada para usuario: {}", user.getUsername());
     }
 
-    // --- Método updateUserRoles (ya implementado y corregido) ---
     @Transactional
     public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
         User user = usuarioRepositorio.findById(userId)

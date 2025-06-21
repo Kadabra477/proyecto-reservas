@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -73,9 +74,10 @@ public class AuthController {
 
             User userDetails = (User) authentication.getPrincipal();
 
+            // <-- CAMBIO: La cuenta debe estar habilitada para poder loguearse -->
             if (!userDetails.isEnabled()) {
                 log.warn("Login fallido para {}: cuenta no activada.", userDetails.getUsername());
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Cuenta no activada. Por favor, verifica tu email.");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Cuenta no activada. Por favor, contacta a un administrador.");
             }
 
             List<String> roles = userDetails.getAuthorities().stream()
@@ -130,32 +132,33 @@ public class AuthController {
         nuevoUsuario.setRoles(roles);;
         try {
             usuarioServicio.registerNewUser(nuevoUsuario);
-            log.info("Usuario '{}' registrado exitosamente. Email de validación enviado.", signUpRequest.getEmail());
-            return ResponseEntity.ok("Usuario registrado exitosamente. Por favor, revisa tu email para activar tu cuenta.");
+            // <-- CAMBIO: Mensaje de registro simplificado, no menciona email de validación -->
+            log.info("Usuario '{}' registrado exitosamente y pendiente de activación admin.", signUpRequest.getEmail());
+            return ResponseEntity.ok("Usuario registrado exitosamente. Un administrador activará tu cuenta en breve.");
         } catch (Exception e) {
             log.error("Error durante el registro de usuario {}: {}", signUpRequest.getEmail(), e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: No se pudo registrar el usuario. Posiblemente un problema con el envío del email de verificación.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: No se pudo registrar el usuario. Intenta de nuevo más tarde.");
         }
     }
 
-    @GetMapping("/validate")
-    public ResponseEntity<String> verifyUser(@RequestParam String token) {
-        log.info("GET /api/auth/validate - Intentando validar cuenta con token.");
-        try {
-            boolean activated = usuarioServicio.activateUser(token);
-            if (activated) {
-                log.info("Cuenta activada exitosamente para token.");
-                // El frontend se encargará de la redirección y el mensaje de éxito
-                return ResponseEntity.ok("Cuenta activada exitosamente.");
-            } else {
-                log.warn("Fallo en la activación de cuenta: token inválido o expirado.");
-                return ResponseEntity.badRequest().body("Error: Token de activación inválido o expirado.");
-            }
-        } catch (Exception e) {
-            log.error("Error inesperado durante la activación de cuenta con token: {}. Mensaje: {}", token, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al activar la cuenta.");
-        }
-    }
+    // <-- ELIMINAR: El endpoint /validate ya no es necesario -->
+    // @GetMapping("/validate")
+    // public ResponseEntity<String> verifyUser(@RequestParam String token) {
+    //     log.info("GET /api/auth/validate - Intentando validar cuenta con token.");
+    //     try {
+    //         boolean activated = usuarioServicio.activateUser(token);
+    //         if (activated) {
+    //             log.info("Cuenta activada exitosamente para token.");
+    //             return ResponseEntity.ok("Cuenta activada exitosamente.");
+    //         } else {
+    //             log.warn("Fallo en la activación de cuenta: token inválido o expirado.");
+    //             return ResponseEntity.badRequest().body("Error: Token de activación inválido o expirado.");
+    //         }
+    //     } catch (Exception e) {
+    //         log.error("Error inesperado durante la activación de cuenta con token: {}. Mensaje: {}", token, e.getMessage(), e);
+    //         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al activar la cuenta.");
+    //     }
+    // }
 
     @PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(@RequestParam("email") String email) {
@@ -208,5 +211,79 @@ public class AuthController {
             log.warn("Token JWT inválido o expirado.");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado.");
         }
+    }
+
+    // DTO para la solicitud de actualización de roles (definido aquí para que AuthController lo use)
+    public static class UpdateRolesRequest {
+        private Set<String> roles;
+        public Set<String> getRoles() {
+            return roles;
+        }
+        public void setRoles(Set<String> roles) {
+            this.roles = roles;
+        }
+    }
+
+    @PreAuthorize("hasRole('ADMIN')") // Solo un usuario con rol ADMIN puede acceder a este endpoint
+    @PutMapping("/admin/users/{userId}/roles")
+    public ResponseEntity<?> updateUserRoles(@PathVariable Long userId, @RequestBody UpdateRolesRequest request) {
+        log.info("PUT /api/auth/admin/users/{}/roles - Intentando actualizar roles para usuario ID: {}", userId, request.getRoles());
+        try {
+            Set<ERole> newRolesEnum = request.getRoles().stream()
+                    .map(roleName -> {
+                        try {
+                            return ERole.valueOf(roleName);
+                        } catch (IllegalArgumentException e) {
+                            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol inválido proporcionado: " + roleName);
+                        }
+                    })
+                    .collect(Collectors.toSet());
+
+            User updatedUser = usuarioServicio.updateUserRoles(userId, newRolesEnum);
+            return ResponseEntity.ok("Roles de usuario " + updatedUser.getUsername() + " actualizados exitosamente a: " + updatedUser.getRoles().stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
+        } catch (IllegalArgumentException e) {
+            log.warn("Error al actualizar roles para usuario {}: {}", userId, e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (UsernameNotFoundException e) {
+            log.warn("Usuario no encontrado al actualizar roles para ID {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Usuario no encontrado.");
+        } catch (ResponseStatusException e) { // Captura ResponseStatusException de la conversión a ERole
+            log.warn("Error de validación de rol al actualizar roles para usuario {}: {}", userId, e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).body(e.getReason());
+        } catch (Exception e) {
+            log.error("Error inesperado al actualizar roles para usuario ID {}: {}", userId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al actualizar roles.");
+        }
+    }
+
+    // <-- NUEVO ENDPOINT: Activar usuario por ADMIN (con ID) -->
+    @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/admin/users/{userId}/activate")
+    public ResponseEntity<?> activateUserByAdmin(@PathVariable Long userId) {
+        log.info("PUT /api/auth/admin/users/{}/activate - Solicitud de activación de usuario para ID: {}", userId, userId);
+        try {
+            boolean activated = usuarioServicio.activateUser(userId); // Llama al nuevo método del servicio
+            if (activated) {
+                log.info("Usuario con ID {} activado exitosamente por admin.", userId);
+                return ResponseEntity.ok("Usuario activado exitosamente.");
+            } else {
+                log.warn("Fallo en la activación de usuario ID {}: no encontrado o ya activo.", userId);
+                return ResponseEntity.badRequest().body("Error: Usuario no encontrado o ya activo.");
+            }
+        } catch (UsernameNotFoundException e) { // El servicio ahora lanza esta si no encuentra el usuario
+            log.warn("Usuario con ID {} no encontrado para activación por admin.", userId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Usuario no encontrado.");
+        } catch (Exception e) {
+            log.error("Error inesperado al activar usuario ID {}: {}", userId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al activar usuario.");
+        }
+    }
+
+
+    private Optional<User> obtenerUsuarioAutenticado(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return Optional.empty();
+        }
+        return usuarioServicio.findByUsername(auth.getName());
     }
 }
