@@ -1,7 +1,7 @@
 package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Complejo;
-import com.example.reservafutbol.Modelo.ERole; // Importa ERole
+import com.example.reservafutbol.Modelo.ERole;
 import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
@@ -34,7 +34,6 @@ public class ComplejoServicio {
     @Autowired
     private RoleRepositorio roleRepositorio;
 
-    // Este método ya existe y lo mantendremos por compatibilidad, pero el frontend usará 'crearComplejoParaAdmin'
     @Transactional
     public Complejo crearComplejo(Complejo complejo, String propietarioUsername) {
         log.info("Creando nuevo complejo (detallado): {} para propietario: {}", complejo.getNombre(), propietarioUsername);
@@ -58,7 +57,6 @@ public class ComplejoServicio {
         return complejoRepositorio.save(complejo);
     }
 
-    // Método mejorado para la creación de complejos por el ADMIN, recibiendo todos los detalles
     @Transactional
     public Complejo crearComplejoParaAdmin(String nombreComplejo, String propietarioUsername,
                                            String descripcion, String ubicacion, String telefono, String fotoUrl,
@@ -80,25 +78,23 @@ public class ComplejoServicio {
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
 
-        // Asignar el rol OWNER si el propietario no lo tiene
-        // **CORRECCIÓN:** Se usa ERole.ROLE_OWNER para referenciar el enum.
-        Role ownerRole = roleRepositorio.findByName(ERole.ROLE_ADMIN)
-                .orElseThrow(() -> new RuntimeException("Error: Rol OWNER no encontrado."));
+        // <-- CAMBIO CRÍTICO: Asegurar que al propietario se le asigna ROLE_COMPLEX_OWNER -->
+        // La lógica de exclusividad ADMIN/COMPLEX_OWNER está en UsuarioServicio.updateUserRoles
+        // Aquí solo nos aseguramos de que el propietario tenga el rol necesario para ser dueño de un complejo.
+        Set<ERole> desiredRoles = new HashSet<>();
+        desiredRoles.add(ERole.ROLE_USER); // Asegurar que tenga el rol base USER
+        desiredRoles.add(ERole.ROLE_COMPLEX_OWNER); // Añadir el rol de dueño de complejo
 
-        Set<Role> roles = new HashSet<>(propietario.getRoles());
-        if (!roles.contains(ownerRole)) {
-            roles.add(ownerRole);
-            propietario.setRoles(roles);
-            // **CORRECCIÓN:** Se usa .save() en lugar de .guardarUsuario()
-            usuarioServicio.save(propietario);
-            log.info("Asignado rol COMPLEX_OWNER a usuario: {}", propietarioUsername);
-        }
+        // Si el propietario ya es ADMIN, la lógica en UsuarioServicio.updateUserRoles
+        // se encargará de NO añadirle COMPLEX_OWNER si la regla es de exclusividad.
+        // Si el propietario no tiene ninguno de los roles, UsuarioServicio le asignará ROLE_USER
+        // y luego le agregará COMPLEX_OWNER si no es ADMIN.
+        usuarioServicio.updateUserRoles(propietario.getId(), desiredRoles); // Actualizar los roles del propietario
 
         Complejo nuevoComplejo = new Complejo();
         nuevoComplejo.setNombre(nombreComplejo);
         nuevoComplejo.setPropietario(propietario);
 
-        // Asignar detalles generales
         nuevoComplejo.setDescripcion(descripcion);
         nuevoComplejo.setUbicacion(ubicacion);
         nuevoComplejo.setTelefono(telefono);
@@ -106,7 +102,6 @@ public class ComplejoServicio {
         nuevoComplejo.setHorarioApertura(horarioApertura != null ? horarioApertura : LocalTime.of(8, 0));
         nuevoComplejo.setHorarioCierre(horarioCierre != null ? horarioCierre : LocalTime.of(22, 0));
 
-        // Asignar detalles de canchas
         nuevoComplejo.setCanchaCounts(canchaCounts != null ? canchaCounts : new HashMap<>());
         nuevoComplejo.setCanchaPrices(canchaPrices != null ? canchaPrices : new HashMap<>());
         nuevoComplejo.setCanchaSurfaces(canchaSurfaces != null ? canchaSurfaces : new HashMap<>());
@@ -146,7 +141,6 @@ public class ComplejoServicio {
         User editor = usuarioServicio.findByUsername(editorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario editor no encontrado: " + editorUsername));
 
-        // Verificar permisos: ADMIN o el PROPIETARIO del complejo
         boolean isAdmin = editor.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN));
         boolean isOwner = complejoExistente.getPropietario() != null && complejoExistente.getPropietario().getId().equals(editor.getId());
 
@@ -162,7 +156,6 @@ public class ComplejoServicio {
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
 
-        // Actualizar los mapas de canchas. Asegurarse de que si se envían nulos, se inicialicen.
         complejoExistente.setCanchaCounts(complejoDetails.getCanchaCounts() != null ? complejoDetails.getCanchaCounts() : new HashMap<>());
         complejoExistente.setCanchaPrices(complejoDetails.getCanchaPrices() != null ? complejoDetails.getCanchaPrices() : new HashMap<>());
         complejoExistente.setCanchaSurfaces(complejoDetails.getCanchaSurfaces() != null ? complejoDetails.getCanchaSurfaces() : new HashMap<>());
@@ -182,7 +175,6 @@ public class ComplejoServicio {
         User eliminador = usuarioServicio.findByUsername(eliminadorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario eliminador no encontrado: " + eliminadorUsername));
 
-        // Verificar permisos: ADMIN o el PROPIETARIO del complejo
         boolean isAdmin = eliminador.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN));
         boolean isOwner = complejoExistente.getPropietario() != null && complejoExistente.getPropietario().getId().equals(eliminador.getId());
 
