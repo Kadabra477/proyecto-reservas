@@ -1,6 +1,6 @@
 package com.example.reservafutbol.Modelo;
 
-import com.fasterxml.jackson.annotation.JsonIgnore; // Importar JsonIgnore
+// import com.fasterxml.jackson.annotation.JsonIgnore; // ELIMINAR ESTA IMPORTACIÓN
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -34,9 +34,9 @@ public class Complejo {
     private LocalTime horarioCierre;   // Ej: 00:00 (medianoche)
 
     // --- Asociación con el propietario (User) ---
-    @ManyToOne(fetch = FetchType.LAZY) // Muchos complejos pueden ser de un solo propietario
+    // @JsonIgnore // <--- ELIMINAR ESTA ANOTACIÓN
+    @ManyToOne(fetch = FetchType.LAZY) // Mantenemos LAZY para optimización, pero lo haremos FETCH en el repo si es necesario
     @JoinColumn(name = "propietario_id") // Columna que almacenará el ID del propietario en la tabla 'complejos'
-    @JsonIgnore // <--- AÑADIDA ESTA ANOTACIÓN para evitar LazyInitializationException al serializar
     private User propietario; // El usuario que es dueño/administrador de este complejo
 
     // --- Detalles de Canchas por Tipo dentro de este Complejo ---

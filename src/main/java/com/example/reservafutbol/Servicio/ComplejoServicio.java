@@ -6,6 +6,7 @@ import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
 import com.example.reservafutbol.Repositorio.RoleRepositorio;
+// import com.example.reservafutbol.DTO.ComplejoDTO; // ELIMINAR ESTA IMPORTACIÓN
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+// import java.util.stream.Collectors; // Ya no necesario para mapeo masivo a DTO
 
 @Service
 public class ComplejoServicio {
@@ -33,6 +35,10 @@ public class ComplejoServicio {
 
     @Autowired
     private RoleRepositorio roleRepositorio;
+
+    // ELIMINAR MÉTODOS DE CONVERSIÓN A DTO si los había
+    // private ComplejoDTO convertirAComplejoDTO(Complejo complejo) { ... }
+
 
     @Transactional
     public Complejo crearComplejo(Complejo complejo, String propietarioUsername) {
@@ -78,18 +84,11 @@ public class ComplejoServicio {
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
 
-        // <-- CAMBIO CRÍTICO: Asegurar que al propietario se le asigna ROLE_COMPLEX_OWNER -->
-        // La lógica de exclusividad ADMIN/COMPLEX_OWNER está en UsuarioServicio.updateUserRoles
-        // Aquí solo nos aseguramos de que el propietario tenga el rol necesario para ser dueño de un complejo.
         Set<ERole> desiredRoles = new HashSet<>();
-        desiredRoles.add(ERole.ROLE_USER); // Asegurar que tenga el rol base USER
-        desiredRoles.add(ERole.ROLE_COMPLEX_OWNER); // Añadir el rol de dueño de complejo
+        desiredRoles.add(ERole.ROLE_USER);
+        desiredRoles.add(ERole.ROLE_COMPLEX_OWNER);
 
-        // Si el propietario ya es ADMIN, la lógica en UsuarioServicio.updateUserRoles
-        // se encargará de NO añadirle COMPLEX_OWNER si la regla es de exclusividad.
-        // Si el propietario no tiene ninguno de los roles, UsuarioServicio le asignará ROLE_USER
-        // y luego le agregará COMPLEX_OWNER si no es ADMIN.
-        usuarioServicio.updateUserRoles(propietario.getId(), desiredRoles); // Actualizar los roles del propietario
+        usuarioServicio.updateUserRoles(propietario.getId(), desiredRoles);
 
         Complejo nuevoComplejo = new Complejo();
         nuevoComplejo.setNombre(nombreComplejo);
@@ -113,29 +112,37 @@ public class ComplejoServicio {
 
     @Transactional(readOnly = true)
     public List<Complejo> listarTodosLosComplejos() {
-        log.info("Listando todos los complejos.");
-        return complejoRepositorio.findAll();
+        log.info("Listando todos los complejos (con propietario cargado).");
+        return complejoRepositorio.findAllWithPropietario(); // Usar el nuevo método con JOIN FETCH
     }
 
     @Transactional(readOnly = true)
     public List<Complejo> listarComplejosPorPropietario(String propietarioUsername) {
-        log.info("Listando complejos para propietario: {}", propietarioUsername);
+        log.info("Listando complejos para propietario: {} (con propietario cargado).", propietarioUsername);
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
-        return complejoRepositorio.findByPropietario(propietario);
+        return complejoRepositorio.findByPropietarioWithPropietario(propietario); // Usar el nuevo método con JOIN FETCH
     }
 
     @Transactional(readOnly = true)
     public Optional<Complejo> buscarComplejoPorId(Long id) {
-        log.info("Buscando complejo por ID: {}", id);
-        return complejoRepositorio.findById(id);
+        log.info("Buscando complejo por ID: {}.", id);
+        return complejoRepositorio.findById(id); // Este método no necesita fetch, es para uso general
     }
+
+    @Transactional(readOnly = true)
+    public Optional<Complejo> buscarComplejoPorIdWithPropietario(Long id) {
+        log.info("Buscando complejo por ID: {} (con propietario cargado).", id);
+        return complejoRepositorio.findByIdWithPropietario(id); // Usar el nuevo método con JOIN FETCH
+    }
+
 
     @Transactional
     public Complejo actualizarComplejo(Long id, Complejo complejoDetails, String editorUsername) {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
-        Complejo complejoExistente = complejoRepositorio.findById(id)
+        // Importante: Cargar el complejo con el propietario para verificar permisos
+        Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
         User editor = usuarioServicio.findByUsername(editorUsername)
@@ -156,11 +163,11 @@ public class ComplejoServicio {
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
 
-        complejoExistente.setCanchaCounts(complejoDetails.getCanchaCounts() != null ? complejoDetails.getCanchaCounts() : new HashMap<>());
-        complejoExistente.setCanchaPrices(complejoDetails.getCanchaPrices() != null ? complejoDetails.getCanchaPrices() : new HashMap<>());
-        complejoExistente.setCanchaSurfaces(complejoDetails.getCanchaSurfaces() != null ? complejoDetails.getCanchaSurfaces() : new HashMap<>());
-        complejoExistente.setCanchaIluminacion(complejoDetails.getCanchaIluminacion() != null ? complejoDetails.getCanchaIluminacion() : new HashMap<>());
-        complejoExistente.setCanchaTecho(complejoDetails.getCanchaTecho() != null ? complejoDetails.getCanchaTecho() : new HashMap<>());
+        complejoExistente.setCanchaCounts(complejoDetails.getCanchaCounts() != null ? new HashMap<>(complejoDetails.getCanchaCounts()) : new HashMap<>());
+        complejoExistente.setCanchaPrices(complejoDetails.getCanchaPrices() != null ? new HashMap<>(complejoDetails.getCanchaPrices()) : new HashMap<>());
+        complejoExistente.setCanchaSurfaces(complejoDetails.getCanchaSurfaces() != null ? new HashMap<>(complejoDetails.getCanchaSurfaces()) : new HashMap<>());
+        complejoExistente.setCanchaIluminacion(complejoDetails.getCanchaIluminacion() != null ? new HashMap<>(complejoDetails.getCanchaIluminacion()) : new HashMap<>());
+        complejoExistente.setCanchaTecho(complejoDetails.getCanchaTecho() != null ? new HashMap<>(complejoDetails.getCanchaTecho()) : new HashMap<>());
 
         return complejoRepositorio.save(complejoExistente);
     }
@@ -169,7 +176,8 @@ public class ComplejoServicio {
     public void eliminarComplejo(Long id, String eliminadorUsername) {
         log.info("Eliminando complejo con ID: {} por usuario: {}", id, eliminadorUsername);
 
-        Complejo complejoExistente = complejoRepositorio.findById(id)
+        // Importante: Cargar el complejo con el propietario para verificar permisos
+        Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
         User eliminador = usuarioServicio.findByUsername(eliminadorUsername)
