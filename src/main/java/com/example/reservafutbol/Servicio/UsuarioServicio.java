@@ -116,7 +116,7 @@ public class UsuarioServicio implements UserDetailsService {
             User usuario = userOptional.get();
             if (usuario.isEnabled()) {
                 log.warn("Usuario con ID {} ya estaba activado.", userId);
-                return true;
+                return true; // Ya está activado, no hay problema
             }
             usuario.setEnabled(true);
             usuario.setVerificationToken(null); // Asegurarse que cualquier token residual sea null
@@ -125,7 +125,7 @@ public class UsuarioServicio implements UserDetailsService {
             return true;
         }
         log.warn("Usuario con ID {} no encontrado para activación por administrador.", userId);
-        throw new UsernameNotFoundException("Usuario no encontrado con ID: " + userId); // Lanzar excepción si no se encuentra
+        return false; // Retornar false si el usuario no fue encontrado
     }
 
     @Transactional
@@ -227,23 +227,41 @@ public class UsuarioServicio implements UserDetailsService {
             rolesToSet.add(role);
         }
 
-        if (hasAdmin) {
-            log.info("Asignando ROLE_ADMIN a usuario {}. Eliminando ROLE_COMPLEX_OWNER si existe.", user.getUsername());
-            rolesToSet.removeIf(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER));
-        } else if (hasComplexOwner) {
-            log.info("Asignando ROLE_COMPLEX_OWNER a usuario {}. Eliminando ROLE_ADMIN si existe.", user.getUsername());
-            rolesToSet.removeIf(r -> r.getName().equals(ERole.ROLE_ADMIN));
-        }
+        // Esta lógica ya no elimina roles si el usuario está siendo asignado a otro,
+        // sino que asegura la exclusividad ADMIN/COMPLEX_OWNER si se intentan asignar ambos.
+        // Si no se especifica ROLE_USER, se asumirá implícitamente por Spring Security si no hay otros roles.
+        // Para simplificar, la regla ahora es: si tiene ADMIN, no puede tener COMPLEX_OWNER, y viceversa.
+        // Si solo se pasa uno de ellos, se quita el otro si existía.
 
-        if (rolesToSet.isEmpty()) {
-            Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
-                    .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
-            rolesToSet.add(userRole);
-            log.warn("Usuario {} quedó sin roles específicos, se le asignó ROLE_USER por defecto.", user.getUsername());
+        // Mantenemos ROLE_USER si no se especifican otros roles específicos, o si es el rol base.
+        if (rolesToSet.isEmpty() || (rolesToSet.size() == 1 && rolesToSet.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_USER)) && newRolesEnum.size() > 0)) {
+            // Si la lista de nuevos roles explícitamente no contiene nada o solo USER,
+            // nos aseguramos de que al menos tenga el rol USER.
+            if (!rolesToSet.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_USER))) {
+                Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
+                        .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
+                rolesToSet.add(userRole);
+            }
         }
 
         user.setRoles(rolesToSet);
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
         return usuarioRepositorio.save(user);
+    }
+
+    // Nuevo método: Verificar si hay otros administradores (excluyendo el actual)
+    @Transactional(readOnly = true)
+    public boolean existsOtherAdmin(Long currentAdminId) {
+        log.debug("Verificando si existen otros administradores además de ID: {}", currentAdminId);
+        Role adminRole = roleRepositorio.findByName(ERole.ROLE_ADMIN)
+                .orElseThrow(() -> new RuntimeException("Error: Rol ADMIN no encontrado."));
+        List<User> admins = usuarioRepositorio.findByRolesContaining(adminRole);
+
+        // Contar administradores que no sean el currentAdminId
+        long otherAdminsCount = admins.stream()
+                .filter(admin -> !admin.getId().equals(currentAdminId))
+                .count();
+
+        return otherAdminsCount > 0;
     }
 }

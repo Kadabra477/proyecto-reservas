@@ -152,38 +152,59 @@ public class UsuarioControlador {
             }
             User user = userOptional.get();
 
-            Set<Role> rolesToAssign = new HashSet<>();
+            Set<ERole> rolesToAssignEnum = new HashSet<>();
             for (String roleName : newRoles) {
                 ERole eRole;
                 try {
-                    eRole = ERole.valueOf(roleName);
+                    eRole = ERole.valueOf(roleName.replace("ROLE_", "")); // Quitar "ROLE_" para el enum
                 } catch (IllegalArgumentException e) {
                     log.warn("Rol inválido recibido: {}", roleName);
                     return ResponseEntity.badRequest().body("Rol inválido: " + roleName);
                 }
-                Role role = roleRepositorio.findByName(eRole)
-                        .orElseThrow(() -> new RuntimeException("Error: Rol " + roleName + " no encontrado en la BD."));
-                rolesToAssign.add(role);
+                rolesToAssignEnum.add(eRole);
             }
 
+            // Lógica para que un ADMIN no se quite su propio rol de ADMIN sin considerar otros
+            // Esta validación debe hacerse ANTES de llamar al servicio para evitar bloquearse a sí mismo
             User currentAdmin = (User)authentication.getPrincipal();
-            // Asegúrate de que el ADMIN no se quite a sí mismo el rol de ADMIN si no tiene otros ADMINs
-            // Esta lógica puede ser más compleja, pero por ahora, una simple verificación de IDs
-            if (user.getId().equals(currentAdmin.getId()) && !rolesToAssign.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_ADMIN))) {
-                // Puedes implementar una lógica más robusta si quieres, por ejemplo,
-                // si hay más de un ADMIN, permitirle quitarse el rol.
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN a ti mismo.");
+            if (user.getId().equals(currentAdmin.getId()) && !rolesToAssignEnum.contains(ERole.ROLE_ADMIN)) {
+                boolean hasOtherAdmin = usuarioServicio.existsOtherAdmin(currentAdmin.getId());
+                if (!hasOtherAdmin) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN si eres el único administrador.");
+                }
             }
 
-            user.setRoles(rolesToAssign);
-            usuarioServicio.save(user);
+
+            usuarioServicio.updateUserRoles(user.getId(), rolesToAssignEnum);
 
             log.info("Roles de usuario {} actualizados a: {}", userId, newRoles);
             return ResponseEntity.ok("Roles actualizados correctamente para el usuario " + user.getUsername() + ".");
 
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            log.warn("Error de validación al actualizar roles para usuario {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+        catch (Exception e) {
             log.error("Error al actualizar roles para usuario {}: {}", userId, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al actualizar roles: " + e.getMessage());
+        }
+    }
+
+    // Endpoint para activar usuario por ADMIN
+    @PutMapping("/admin/users/{userId}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> activateUserByAdmin(@PathVariable Long userId) {
+        log.info("PUT /api/users/admin/users/{}/activate - Solicitud de activación por ADMIN.", userId);
+        try {
+            boolean activated = usuarioServicio.activateUser(userId);
+            if (activated) {
+                return ResponseEntity.ok("Usuario activado correctamente.");
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado.");
+            }
+        } catch (Exception e) {
+            log.error("Error al activar usuario {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al activar usuario: " + e.getMessage());
         }
     }
 
