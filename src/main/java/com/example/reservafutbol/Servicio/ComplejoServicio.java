@@ -6,7 +6,6 @@ import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
 import com.example.reservafutbol.Repositorio.RoleRepositorio;
-// import com.example.reservafutbol.DTO.ComplejoDTO; // ELIMINAR ESTA IMPORTACIÓN
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-// import java.util.stream.Collectors; // Ya no necesario para mapeo masivo a DTO
 
 @Service
 public class ComplejoServicio {
@@ -35,10 +33,6 @@ public class ComplejoServicio {
 
     @Autowired
     private RoleRepositorio roleRepositorio;
-
-    // ELIMINAR MÉTODOS DE CONVERSIÓN A DTO si los había
-    // private ComplejoDTO convertirAComplejoDTO(Complejo complejo) { ... }
-
 
     @Transactional
     public Complejo crearComplejo(Complejo complejo, String propietarioUsername) {
@@ -113,7 +107,7 @@ public class ComplejoServicio {
     @Transactional(readOnly = true)
     public List<Complejo> listarTodosLosComplejos() {
         log.info("Listando todos los complejos (con propietario cargado).");
-        return complejoRepositorio.findAllWithPropietario(); // Usar el nuevo método con JOIN FETCH
+        return complejoRepositorio.findAllWithPropietario(); // Usa el método con JOIN FETCH
     }
 
     @Transactional(readOnly = true)
@@ -121,19 +115,19 @@ public class ComplejoServicio {
         log.info("Listando complejos para propietario: {} (con propietario cargado).", propietarioUsername);
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
-        return complejoRepositorio.findByPropietarioWithPropietario(propietario); // Usar el nuevo método con JOIN FETCH
+        return complejoRepositorio.findByPropietarioWithPropietario(propietario); // Usa el método con JOIN FETCH
     }
 
     @Transactional(readOnly = true)
     public Optional<Complejo> buscarComplejoPorId(Long id) {
         log.info("Buscando complejo por ID: {}.", id);
-        return complejoRepositorio.findById(id); // Este método no necesita fetch, es para uso general
+        return complejoRepositorio.findById(id); // Este método no necesita fetch para uso general
     }
 
     @Transactional(readOnly = true)
     public Optional<Complejo> buscarComplejoPorIdWithPropietario(Long id) {
         log.info("Buscando complejo por ID: {} (con propietario cargado).", id);
-        return complejoRepositorio.findByIdWithPropietario(id); // Usar el nuevo método con JOIN FETCH
+        return complejoRepositorio.findByIdWithPropietario(id); // Usa el método con JOIN FETCH para el controlador
     }
 
 
@@ -141,7 +135,7 @@ public class ComplejoServicio {
     public Complejo actualizarComplejo(Long id, Complejo complejoDetails, String editorUsername) {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
-        // Importante: Cargar el complejo con el propietario para verificar permisos
+        // Importante: Cargar el complejo CON el propietario para verificar permisos
         Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
@@ -176,7 +170,7 @@ public class ComplejoServicio {
     public void eliminarComplejo(Long id, String eliminadorUsername) {
         log.info("Eliminando complejo con ID: {} por usuario: {}", id, eliminadorUsername);
 
-        // Importante: Cargar el complejo con el propietario para verificar permisos
+        // Importante: Cargar el complejo CON el propietario para verificar permisos
         Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
