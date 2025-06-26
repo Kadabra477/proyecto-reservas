@@ -6,7 +6,7 @@ import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.RoleRepositorio;
 import com.example.reservafutbol.Repositorio.UsuarioRepositorio;
-import com.example.reservafutbol.Servicio.EmailService; // Mantenemos la importación si se usa en otros métodos
+import com.example.reservafutbol.Servicio.EmailService;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
 import com.example.reservafutbol.payload.request.LoginRequest;
 import com.example.reservafutbol.payload.request.PasswordResetRequest;
@@ -57,7 +57,7 @@ public class AuthController {
     JWTUtil jwtUtil;
 
     @Autowired
-    EmailService emailService; // Se mantiene si se usa para restablecer contraseña
+    EmailService emailService;
 
     @Autowired
     UsuarioServicio usuarioServicio;
@@ -74,7 +74,6 @@ public class AuthController {
 
             User userDetails = (User) authentication.getPrincipal();
 
-            // <-- CAMBIO: La cuenta debe estar habilitada para poder loguearse -->
             if (!userDetails.isEnabled()) {
                 log.warn("Login fallido para {}: cuenta no activada.", userDetails.getUsername());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Cuenta no activada. Por favor, contacta a un administrador.");
@@ -84,22 +83,28 @@ public class AuthController {
                     .map(item -> item.getAuthority())
                     .collect(Collectors.toList());
 
-            String mainRole = "USER";
+            // Si necesitas pasar un solo "rol principal" al frontend, tu lógica aquí es correcta.
+            // Sin embargo, en el frontend ya estamos usando un array de roles completo,
+            // por lo que este "mainRole" podría ser menos relevante si el frontend ya itera sobre el array.
+            String mainRole = "USER"; // Default
             if (roles.contains(ERole.ROLE_ADMIN.name())) {
                 mainRole = ERole.ROLE_ADMIN.name().replace("ROLE_", "");
             } else if (roles.contains(ERole.ROLE_COMPLEX_OWNER.name())) {
                 mainRole = ERole.ROLE_COMPLEX_OWNER.name().replace("ROLE_", "");
-            } else if (roles.contains(ERole.ROLE_USER.name())) {
+            } else if (roles.contains(ERole.ROLE_USER.name())) { // Asegura que 'USER' sea el default si no hay otros
                 mainRole = ERole.ROLE_USER.name().replace("ROLE_", "");
             }
 
-            log.info("Login exitoso para {}. Rol principal: {}", userDetails.getUsername(), mainRole);
+            log.info("Login exitoso para {}. Rol principal: {}. Todos los roles: {}", userDetails.getUsername(), mainRole, roles);
 
+            // Se devuelve el mainRole como String. Si el frontend espera un array de roles,
+            // este DTO debería ser actualizado para devolver 'roles' (List<String>) en lugar de 'mainRole' (String).
+            // Ya que el frontend parece manejar un array, no se hace un cambio aquí, pero es algo a considerar si hay un desajuste.
             return ResponseEntity.ok(new JwtResponse(jwt,
                     userDetails.getId(),
                     userDetails.getUsername(),
                     userDetails.getNombreCompleto(),
-                    mainRole));
+                    mainRole)); // O deberías devolver 'roles' aquí si el DTO lo soporta.
         } catch (org.springframework.security.core.AuthenticationException e) {
             log.error("Error de autenticación durante el login para {}: {}", loginRequest.getUsername(), e.getMessage());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Usuario o contraseña incorrectos, o cuenta no activada.");
@@ -129,10 +134,9 @@ public class AuthController {
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
         roles.add(userRole);
-        nuevoUsuario.setRoles(roles);;
+        nuevoUsuario.setRoles(roles);
         try {
             usuarioServicio.registerNewUser(nuevoUsuario);
-            // <-- CAMBIO CRÍTICO AQUÍ: Mensaje de registro actualizado para el flujo de activación por admin -->
             log.info("Usuario '{}' registrado exitosamente y pendiente de activación admin.", signUpRequest.getEmail());
             return ResponseEntity.ok("Usuario registrado exitosamente. Tu cuenta está en proceso de activación. Un administrador la habilitará en breve.");
         } catch (Exception e) {
@@ -150,6 +154,7 @@ public class AuthController {
             return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
         } catch (UsernameNotFoundException e) {
             log.warn("Intento de reseteo de contraseña para email no registrado: {}", email);
+            // Esto es intencional para no revelar si el email existe o no por seguridad.
             return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
         } catch (Exception e) {
             log.error("Error al solicitar reseteo de contraseña para {}: {}", email, e.getMessage(), e);
@@ -205,7 +210,7 @@ public class AuthController {
         }
     }
 
-    @PreAuthorize("hasRole('ADMIN')") // Solo un usuario con rol ADMIN puede acceder a este endpoint
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/admin/users/{userId}/roles")
     public ResponseEntity<?> updateUserRoles(@PathVariable Long userId, @RequestBody UpdateRolesRequest request) {
         log.info("PUT /api/auth/admin/users/{}/roles - Intentando actualizar roles para usuario ID: {}", userId, request.getRoles());
@@ -237,13 +242,12 @@ public class AuthController {
         }
     }
 
-    // NUEVO ENDPOINT: Activar usuario por ADMIN (con ID)
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/admin/users/{userId}/activate")
     public ResponseEntity<?> activateUserByAdmin(@PathVariable Long userId) {
         log.info("PUT /api/auth/admin/users/{}/activate - Solicitud de activación de usuario para ID: {}", userId, userId);
         try {
-            boolean activated = usuarioServicio.activateUser(userId); // Llama al nuevo método del servicio
+            boolean activated = usuarioServicio.activateUser(userId);
             if (activated) {
                 log.info("Usuario con ID {} activado exitosamente por admin.", userId);
                 return ResponseEntity.ok("Usuario activado exitosamente.");
@@ -251,7 +255,7 @@ public class AuthController {
                 log.warn("Fallo en la activación de usuario ID {}: no encontrado o ya activo.", userId);
                 return ResponseEntity.badRequest().body("Error: Usuario no encontrado o ya activo.");
             }
-        } catch (UsernameNotFoundException e) { // El servicio ahora lanza esta si no encuentra el usuario
+        } catch (UsernameNotFoundException e) {
             log.warn("Usuario con ID {} no encontrado para activación por admin.", userId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Usuario no encontrado.");
         } catch (Exception e) {

@@ -1,7 +1,5 @@
 package com.example.reservafutbol.Modelo;
 
-// Asegúrate de que esta importación NO esté: import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -34,12 +32,10 @@ public class Complejo {
     @Column(nullable = false)
     private LocalTime horarioCierre;
 
-    // **CAMBIO CLAVE AQUÍ:** De LAZY a EAGER
-    @ManyToOne(fetch = FetchType.EAGER) // ¡Cambiado a EAGER!
+    @ManyToOne(fetch = FetchType.EAGER) // ¡Ya está en EAGER!
     @JoinColumn(name = "propietario_id")
     private User propietario; // ¡Sin @JsonIgnore aquí!
 
-    // Resto de tus colecciones (Mapas) que ya están en EAGER y correctas
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "complejo_cancha_counts", joinColumns = @JoinColumn(name = "complejo_id"))
     @MapKeyColumn(name = "tipo_cancha")

@@ -51,12 +51,12 @@ public class ReservaControlador {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    @Autowired(required = false) // 'required = false' si el bean no siempre está disponible (ej. si está en un perfil específico)
+    @Autowired(required = false)
     private PdfGeneratorService pdfGeneratorService;
 
-    // Obtener reservas por complejo y tipo (para uso de admins o propietarios, si se necesita)
+    // Endpoint para obtener reservas por complejo y tipo (útil para ver slots específicos)
     @GetMapping("/complejo/{complejoId}/tipo/{tipoCancha}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')") // Solo admins o dueños pueden ver esto
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerReservasPorComplejoYTipo(
             @PathVariable Long complejoId, @PathVariable String tipoCancha, Authentication authentication) {
         String username = authentication.getName();
@@ -68,10 +68,10 @@ public class ReservaControlador {
                     .map(ReservaDetalleDTO::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(reservasDTO);
-        } catch (SecurityException e) { // Capturar el error de acceso denegado del servicio
+        } catch (SecurityException e) {
             log.warn("Acceso denegado a reservas de complejo {} por {}: {}", complejoId, username, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
-        } catch (IllegalArgumentException e) { // Capturar si el complejo no existe
+        } catch (IllegalArgumentException e) {
             log.warn("Error al obtener reservas por complejo y tipo: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
@@ -81,17 +81,19 @@ public class ReservaControlador {
     }
 
 
-    // MODIFICADO: Este endpoint ahora acepta un Authentication para filtrar por rol
-    @GetMapping("/admin/todas")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')") // Solo estos roles pueden acceder a esta vista "admin"
+    // MODIFICADO: Este endpoint ya maneja el filtrado por rol en el servicio,
+    // y es el que debería usar el frontend para "Gestionar Reservas" tanto ADMIN como COMPLEX_OWNER.
+    @GetMapping("/admin/todas") // El nombre de la ruta sigue siendo "admin/todas"
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerTodas(Authentication authentication) {
         String username = authentication.getName();
-        log.info("GET /api/reservas/admin/todas - Obteniendo todas las reservas para: {}", username);
+        log.info("GET /api/reservas/admin/todas - Obteniendo todas las reservas (filtradas por rol si aplica) para: {}", username);
         try {
             List<Reserva> reservas = reservaServicio.listarTodas(username); // Pasa el username al servicio
             List<ReservaDetalleDTO> reservasDTO = reservas.stream()
                     .map(ReservaDetalleDTO::new)
                     .collect(Collectors.toList());
+            // Si la lista está vacía, devuelve 200 OK con un array vacío [], que es lo esperado por el frontend.
             return ResponseEntity.ok(reservasDTO);
         } catch (UsernameNotFoundException e) {
             log.error("Usuario no encontrado al listar todas las reservas: {}", username);
@@ -146,21 +148,18 @@ public class ReservaControlador {
         }
         String username = authentication.getName();
 
-        // Buscar el usuario autenticado
         User usuario = usuarioServicio.findByUsername(username)
                 .orElseThrow(() -> {
                     log.error("Usuario autenticado '{}' no encontrado en la base de datos.", username);
                     return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error de autenticación interno.");
                 });
 
-        // Obtener el Complejo para asignar a la reserva
         Complejo complejo = complejoServicio.buscarComplejoPorId(dto.getComplejoId())
                 .orElseThrow(() -> {
                     log.warn("Complejo no encontrado con ID: {}", dto.getComplejoId());
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "El complejo seleccionado no existe.");
                 });
 
-        // Generar el nombre interno de la cancha asignada y obtener el precio
         Optional<String> nombreCanchaAsignadaOpt = reservaServicio.generateAssignedCanchaName(dto.getComplejoId(), dto.getTipoCancha(), dto.getFecha(), dto.getHora());
         if (nombreCanchaAsignadaOpt.isEmpty()) {
             log.warn("No se pudo generar nombre de cancha asignada. Esto indica que no hay slots disponibles.");
@@ -174,22 +173,20 @@ public class ReservaControlador {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("El precio para este tipo de cancha no está configurado en el complejo.");
         }
 
-        // Construir el objeto Reserva con los nuevos campos
         Reserva nuevaReserva = new Reserva();
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
-        nuevaReserva.setComplejo(complejo); // Asignar el objeto Complejo
-        nuevaReserva.setTipoCanchaReservada(dto.getTipoCancha()); // Asignar el tipo de cancha reservada
-        nuevaReserva.setNombreCanchaAsignada(nombreCanchaAsignada); // Asignar el nombre interno
+        nuevaReserva.setComplejo(complejo);
+        nuevaReserva.setTipoCanchaReservada(dto.getTipoCancha());
+        nuevaReserva.setNombreCanchaAsignada(nombreCanchaAsignada);
         nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
 
-        // CONSTRUIR EL CAMPO CLIENTE A PARTIR DE NOMBRE Y APELLIDO DEL DTO
         nuevaReserva.setCliente(dto.getNombre().trim() + " " + dto.getApellido().trim());
-        nuevaReserva.setDni(String.valueOf(dto.getDni())); // Convertir Integer a String para el campo DNI en el modelo Reserva
+        nuevaReserva.setDni(String.valueOf(dto.getDni()));
 
-        nuevaReserva.setPrecio(BigDecimal.valueOf(precioPorHora)); // Asignar el precio obtenido del complejo
+        nuevaReserva.setPrecio(BigDecimal.valueOf(precioPorHora));
 
         try {
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
@@ -204,23 +201,21 @@ public class ReservaControlador {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         } catch (Exception e) {
             log.error("Error inesperado al guardar reserva:", e);
-            // Mensaje de error más genérico para el usuario
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al guardar la reserva. Por favor, intenta de nuevo.");
         }
     }
 
-    // --- Otros Endpoints de Reserva (se mantienen pero pueden usar los nuevos DTOs/relaciones) ---
     @PutMapping("/{id}/confirmar")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<ReservaDetalleDTO> confirmar(@PathVariable Long id, Authentication authentication) {
         String username = authentication.getName();
         log.info("PUT /api/reservas/{}/confirmar por usuario: {}", id, username);
         try {
-            Reserva reservaConfirmada = reservaServicio.confirmarReserva(id, username); // Pasa el username
+            Reserva reservaConfirmada = reservaServicio.confirmarReserva(id, username);
             return ResponseEntity.ok(new ReservaDetalleDTO(reservaConfirmada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        } catch (SecurityException e) { // Acceso denegado
+        } catch (SecurityException e) {
             log.warn("Acceso denegado para confirmar reserva {}: {}", id, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (IllegalStateException e) {
@@ -240,11 +235,11 @@ public class ReservaControlador {
         String username = authentication.getName();
         log.info("PUT /api/reservas/{}/marcar-pagada - Metodo: {}, MP ID: {}, por usuario: {}", id, metodoPago, mercadoPagoPaymentId, username);
         try {
-            Reserva reservaPagada = reservaServicio.marcarComoPagada(id, metodoPago, mercadoPagoPaymentId, username); // Pasa el username
+            Reserva reservaPagada = reservaServicio.marcarComoPagada(id, metodoPago, mercadoPagoPaymentId, username);
             return ResponseEntity.ok(new ReservaDetalleDTO(reservaPagada));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        } catch (SecurityException e) { // Acceso denegado
+        } catch (SecurityException e) {
             log.warn("Acceso denegado para marcar pagada reserva {}: {}", id, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (IllegalStateException e) {
@@ -261,11 +256,11 @@ public class ReservaControlador {
         String username = authentication.getName();
         log.info("PUT /api/reservas/{}/equipos por usuario: {}", id, username);
         try {
-            Reserva reservaConEquipos = reservaServicio.generarEquipos(id, username); // Pasa el username
+            Reserva reservaConEquipos = reservaServicio.generarEquipos(id, username);
             return ResponseEntity.ok(new ReservaDetalleDTO(reservaConEquipos));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        } catch (SecurityException e) { // Acceso denegado
+        } catch (SecurityException e) {
             log.warn("Acceso denegado para generar equipos reserva {}: {}", id, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (Exception e) {
@@ -280,11 +275,11 @@ public class ReservaControlador {
         String username = authentication.getName();
         log.info("DELETE /api/reservas/{} - Eliminando reserva por usuario: {}", id, username);
         try {
-            reservaServicio.eliminarReserva(id, username); // Pasa el username
+            reservaServicio.eliminarReserva(id, username);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        } catch (SecurityException e) { // Acceso denegado
+        } catch (SecurityException e) {
             log.warn("Acceso denegado para eliminar reserva {}: {}", id, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (Exception e) {
@@ -294,7 +289,7 @@ public class ReservaControlador {
     }
 
     @GetMapping(value = "/{reservaId}/pdf-comprobante", produces = MediaType.APPLICATION_PDF_VALUE)
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER', 'USER')") // Permitir a los usuarios ver su propio PDF
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER', 'USER')")
     public ResponseEntity<InputStreamResource> generarComprobantePdf(@PathVariable Long reservaId, Authentication authentication) {
         String username = authentication.getName();
         log.info("GET /api/reservas/{}/pdf-comprobante por usuario: {}", reservaId, username);
@@ -309,13 +304,12 @@ public class ReservaControlador {
             }
             Reserva reserva = reservaOptional.get();
 
-            // --- Lógica de Autorización a Nivel de Recurso ---
             User requester = usuarioServicio.findByUsername(username)
                     .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + username));
 
-            boolean isUser = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_USER"));
-            boolean isAdmin = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_ADMIN"));
-            boolean isOwner = requester.getRoles().stream().anyMatch(r -> r.getName().name().equals("ROLE_COMPLEX_OWNER"));
+            boolean isAdmin = requester.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            boolean isOwner = requester.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_COMPLEX_OWNER"));
+            boolean isUser = requester.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_USER"));
 
             // Reglas de acceso al PDF:
             // - ADMIN puede ver cualquier PDF
@@ -339,7 +333,7 @@ public class ReservaControlador {
         } catch (DocumentException e) {
             log.error("Error al generar PDF para reserva ID {}: {}", reservaId, e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al generar el comprobante PDF.", e);
-        } catch (SecurityException e) { // Acceso denegado
+        } catch (SecurityException e) {
             log.warn("Acceso denegado para PDF de reserva {}: {}", reservaId, e.getMessage());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (Exception e) {

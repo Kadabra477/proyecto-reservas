@@ -6,7 +6,7 @@ import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
 import com.example.reservafutbol.Servicio.S3StorageService;
-import com.example.reservafutbol.Repositorio.RoleRepositorio;
+import com.example.reservafutbol.Repositorio.RoleRepositorio; // Mantenemos esta si es necesaria para otras partes
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,7 +38,7 @@ public class UsuarioControlador {
     private S3StorageService s3StorageService;
 
     @Autowired
-    private RoleRepositorio roleRepositorio;
+    private RoleRepositorio roleRepositorio; // Puede ser eliminado si solo lo usaba el método duplicado
 
     @GetMapping("/me")
     public ResponseEntity<?> obtenerPerfil(Authentication auth) {
@@ -52,11 +52,9 @@ public class UsuarioControlador {
                 .map(item -> item.getAuthority())
                 .collect(Collectors.toList());
 
-        // Lógica para intentar dividir nombreCompleto en nombre y apellido para el DTO
         String nombre = "";
         String apellido = "";
         if (user.getNombreCompleto() != null && !user.getNombreCompleto().isBlank()) {
-            // Divide por el primer espacio y toma la primera parte como nombre, el resto como apellido
             String[] partesNombre = user.getNombreCompleto().trim().split("\\s+", 2);
             nombre = partesNombre[0];
             if (partesNombre.length > 1) {
@@ -65,13 +63,13 @@ public class UsuarioControlador {
         }
 
         PerfilDTO perfilDTO = new PerfilDTO(
-                user.getNombreCompleto(), // Campo existente, si aún se usa en frontend
-                nombre,                   // Campo 'nombre' para precarga en formularios
-                apellido,                 // Campo 'apellido' para precarga en formularios
+                user.getNombreCompleto(),
+                nombre,
+                apellido,
                 user.getUbicacion(),
                 user.getEdad(),
                 user.getBio(),
-                user.getUsername(),       // Esto es el email del usuario
+                user.getUsername(),
                 user.getProfilePictureUrl(),
                 roles
         );
@@ -87,13 +85,13 @@ public class UsuarioControlador {
         }
 
         User user = optUser.get();
-        // Asegúrate de que tu servicio `updateUserProfile` puede manejar el teléfono
-        // Si tu modelo `User` tiene campos `nombre` y `apellido` separados, y el `PerfilDTO` los envía,
-        // deberías pasar `perfilDTO.getNombre()` y `perfilDTO.getApellido()` aquí.
-        // Por ahora, `nombreCompleto` es lo que se actualiza.
         usuarioServicio.updateUserProfile(
                 user,
-                perfilDTO.getNombreCompleto(), // Se asume que el frontend envía el nombreCompleto actualizado
+                // El frontend envía nombre y apellido por separado, asumo que se reconstruye el nombreCompleto en el DTO o aquí.
+                // Si el DTO ya tiene nombreCompleto, usa perfilDTO.getNombreCompleto()
+                // Si el DTO solo tiene nombre y apellido, deberías combinarlos aquí o en el DTO.
+                // Por simplicidad, asumo que 'nombreCompleto' viene bien en el DTO para el servicio.
+                perfilDTO.getNombreCompleto(),
                 perfilDTO.getUbicacion(),
                 perfilDTO.getEdad(),
                 perfilDTO.getBio()
@@ -128,84 +126,13 @@ public class UsuarioControlador {
         }
     }
 
-    // Nuevo endpoint: Listar todos los usuarios (Solo ADMIN)
+    // LISTAR TODOS LOS USUARIOS (Solo ADMIN) - Este está bien y es necesario
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<User>> getAllUsers() {
         log.info("GET /api/users - Obteniendo todos los usuarios (solo ADMIN).");
         List<User> users = usuarioServicio.findAllUsers();
         return ResponseEntity.ok(users);
-    }
-
-    // Nuevo endpoint: Asignar/Quitar roles a un usuario por ADMIN
-    @PutMapping("/{userId}/roles")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> updateUserRoles(@PathVariable Long userId, @RequestBody List<String> newRoles, Authentication authentication) {
-        String adminUsername = authentication.getName();
-        log.info("PUT /api/users/{}/roles - Admin {} intentando actualizar roles para usuario {}", userId, adminUsername, userId);
-
-        try {
-            Optional<User> userOptional = usuarioServicio.findById(userId);
-            if (userOptional.isEmpty()) {
-                log.warn("Intento de actualizar roles para usuario no encontrado: {}", userId);
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado.");
-            }
-            User user = userOptional.get();
-
-            Set<ERole> rolesToAssignEnum = new HashSet<>();
-            for (String roleName : newRoles) {
-                ERole eRole;
-                try {
-                    eRole = ERole.valueOf(roleName.replace("ROLE_", "")); // Quitar "ROLE_" para el enum
-                } catch (IllegalArgumentException e) {
-                    log.warn("Rol inválido recibido: {}", roleName);
-                    return ResponseEntity.badRequest().body("Rol inválido: " + roleName);
-                }
-                rolesToAssignEnum.add(eRole);
-            }
-
-            // Lógica para que un ADMIN no se quite su propio rol de ADMIN sin considerar otros
-            // Esta validación debe hacerse ANTES de llamar al servicio para evitar bloquearse a sí mismo
-            User currentAdmin = (User)authentication.getPrincipal();
-            if (user.getId().equals(currentAdmin.getId()) && !rolesToAssignEnum.contains(ERole.ROLE_ADMIN)) {
-                boolean hasOtherAdmin = usuarioServicio.existsOtherAdmin(currentAdmin.getId());
-                if (!hasOtherAdmin) {
-                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No puedes quitarte el rol ADMIN si eres el único administrador.");
-                }
-            }
-
-
-            usuarioServicio.updateUserRoles(user.getId(), rolesToAssignEnum);
-
-            log.info("Roles de usuario {} actualizados a: {}", userId, newRoles);
-            return ResponseEntity.ok("Roles actualizados correctamente para el usuario " + user.getUsername() + ".");
-
-        } catch (IllegalArgumentException e) {
-            log.warn("Error de validación al actualizar roles para usuario {}: {}", userId, e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
-        catch (Exception e) {
-            log.error("Error al actualizar roles para usuario {}: {}", userId, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al actualizar roles: " + e.getMessage());
-        }
-    }
-
-    // Endpoint para activar usuario por ADMIN
-    @PutMapping("/admin/users/{userId}/activate")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> activateUserByAdmin(@PathVariable Long userId) {
-        log.info("PUT /api/users/admin/users/{}/activate - Solicitud de activación por ADMIN.", userId);
-        try {
-            boolean activated = usuarioServicio.activateUser(userId);
-            if (activated) {
-                return ResponseEntity.ok("Usuario activado correctamente.");
-            } else {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado.");
-            }
-        } catch (Exception e) {
-            log.error("Error al activar usuario {}: {}", userId, e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al activar usuario: " + e.getMessage());
-        }
     }
 
     private Optional<User> obtenerUsuarioAutenticado(Authentication auth) {

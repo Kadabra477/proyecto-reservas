@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 @Entity
 @Table(name = "users",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = "username") // username (que ahora es el email) debe ser único
+                @UniqueConstraint(columnNames = "username")
         })
 @Getter
 @Setter
@@ -53,8 +53,7 @@ public class User implements UserDetails {
     private Integer edad;
     @Builder.Default
     private Boolean completoPerfil = false;
-    // <-- ELIMINAR: Campo telefono de la entidad -->
-    // private String telefono;
+
     @Column(columnDefinition = "TEXT")
     private String bio;
     private String profilePictureUrl;

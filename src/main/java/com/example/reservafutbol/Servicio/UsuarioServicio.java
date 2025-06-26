@@ -34,7 +34,7 @@ public class UsuarioServicio implements UserDetailsService {
     private UsuarioRepositorio usuarioRepositorio;
 
     @Autowired
-    private EmailService emailService; // Mantener si se usa para resetear contraseña, etc.
+    private EmailService emailService;
 
     @Autowired
     private RoleRepositorio roleRepositorio;
@@ -65,8 +65,7 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional(readOnly = true)
-    // <-- CAMBIO: Ya no se filtra por enabled=true, se listan todos para que el admin pueda ver los inactivos -->
-    public List<User> findAllUsers() { // Cambiado el nombre del método para mayor claridad
+    public List<User> findAllUsers() {
         log.info("Listando todos los usuarios (habilitados e inhabilitados).");
         return usuarioRepositorio.findAll();
     }
@@ -79,9 +78,8 @@ public class UsuarioServicio implements UserDetailsService {
 
     @Transactional
     public User registerNewUser(User user) {
-        // <-- CAMBIO CRÍTICO: Usuario INHABILITADO por defecto y SIN token de verificación -->
-        user.setEnabled(false); // La cuenta no estará activa hasta que un admin la habilite
-        user.setVerificationToken(null); // No se genera token si no hay email de verificación
+        user.setEnabled(false);
+        user.setVerificationToken(null);
 
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
@@ -96,36 +94,27 @@ public class UsuarioServicio implements UserDetailsService {
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario '{}' registrado y guardado (PENDIENTE DE ACTIVACIÓN ADMIN).", savedUser.getUsername());
 
-        // <-- ELIMINAR: El envío del email de verificación ya no es necesario -->
-        // try {
-        //     emailService.sendVerificationEmail(savedUser.getUsername(), savedUser.getNombreCompleto(), savedUser.getVerificationToken());
-        //     log.info("Email de validación enviado a {}", savedUser.getUsername());
-        // } catch (MessagingException e) {
-        //     log.error("Error al enviar email de verificación a {}: {}", savedUser.getUsername(), e.getMessage());
-        //     throw new RuntimeException("Fallo al enviar el email de verificación.", e);
-        // }
         return savedUser;
     }
 
-    // <-- CAMBIO CRÍTICO: Método activateUser ahora toma Long userId para activación por admin -->
     @Transactional
-    public boolean activateUser(Long userId) { // Toma el ID del usuario, no un token
+    public boolean activateUser(Long userId) {
         log.info("Intentando activar usuario con ID: {} (por administrador).", userId);
-        Optional<User> userOptional = usuarioRepositorio.findById(userId); // Buscar por ID
+        Optional<User> userOptional = usuarioRepositorio.findById(userId);
         if (userOptional.isPresent()) {
             User usuario = userOptional.get();
             if (usuario.isEnabled()) {
                 log.warn("Usuario con ID {} ya estaba activado.", userId);
-                return true; // Ya está activado, no hay problema
+                return true;
             }
             usuario.setEnabled(true);
-            usuario.setVerificationToken(null); // Asegurarse que cualquier token residual sea null
+            usuario.setVerificationToken(null);
             usuarioRepositorio.save(usuario);
             log.info("Usuario {} (ID {}) activado exitosamente por administrador.", usuario.getUsername(), userId);
             return true;
         }
         log.warn("Usuario con ID {} no encontrado para activación por administrador.", userId);
-        return false; // Retornar false si el usuario no fue encontrado
+        return false;
     }
 
     @Transactional
@@ -221,35 +210,33 @@ public class UsuarioServicio implements UserDetailsService {
             throw new IllegalArgumentException("Un usuario no puede tener los roles ADMIN y COMPLEX_OWNER a la vez.");
         }
 
-        for (ERole newRoleEnum : newRolesEnum) {
-            Role role = roleRepositorio.findByName(newRoleEnum)
-                    .orElseThrow(() -> new RuntimeException("Error: Rol '" + newRoleEnum + "' no encontrado."));
-            rolesToSet.add(role);
+        // Si se seleccionó ADMIN, aseguramos que también tenga USER
+        if (hasAdmin) {
+            rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_ADMIN)
+                    .orElseThrow(() -> new RuntimeException("Error: Rol 'ADMIN' no encontrado.")));
+            rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
+                    .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
+        }
+        // Si se seleccionó COMPLEX_OWNER (y no ADMIN), aseguramos que también tenga USER
+        else if (hasComplexOwner) {
+            rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_COMPLEX_OWNER)
+                    .orElseThrow(() -> new RuntimeException("Error: Rol 'COMPLEX_OWNER' no encontrado.")));
+            rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
+                    .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
+        }
+        // Si no se seleccionó ADMIN ni COMPLEX_OWNER, pero se seleccionó USER o ningún rol especial,
+        // aseguramos que tenga al menos el rol USER.
+        else if (newRolesEnum.contains(ERole.ROLE_USER) || newRolesEnum.isEmpty()) {
+            rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
+                    .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
         }
 
-        // Esta lógica ya no elimina roles si el usuario está siendo asignado a otro,
-        // sino que asegura la exclusividad ADMIN/COMPLEX_OWNER si se intentan asignar ambos.
-        // Si no se especifica ROLE_USER, se asumirá implícitamente por Spring Security si no hay otros roles.
-        // Para simplificar, la regla ahora es: si tiene ADMIN, no puede tener COMPLEX_OWNER, y viceversa.
-        // Si solo se pasa uno de ellos, se quita el otro si existía.
-
-        // Mantenemos ROLE_USER si no se especifican otros roles específicos, o si es el rol base.
-        if (rolesToSet.isEmpty() || (rolesToSet.size() == 1 && rolesToSet.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_USER)) && newRolesEnum.size() > 0)) {
-            // Si la lista de nuevos roles explícitamente no contiene nada o solo USER,
-            // nos aseguramos de que al menos tenga el rol USER.
-            if (!rolesToSet.stream().anyMatch(r -> r.getName().equals(ERole.ROLE_USER))) {
-                Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
-                        .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
-                rolesToSet.add(userRole);
-            }
-        }
 
         user.setRoles(rolesToSet);
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
         return usuarioRepositorio.save(user);
     }
 
-    // Nuevo método: Verificar si hay otros administradores (excluyendo el actual)
     @Transactional(readOnly = true)
     public boolean existsOtherAdmin(Long currentAdminId) {
         log.debug("Verificando si existen otros administradores además de ID: {}", currentAdminId);
@@ -257,7 +244,6 @@ public class UsuarioServicio implements UserDetailsService {
                 .orElseThrow(() -> new RuntimeException("Error: Rol ADMIN no encontrado."));
         List<User> admins = usuarioRepositorio.findByRolesContaining(adminRole);
 
-        // Contar administradores que no sean el currentAdminId
         long otherAdminsCount = admins.stream()
                 .filter(admin -> !admin.getId().equals(currentAdminId))
                 .count();

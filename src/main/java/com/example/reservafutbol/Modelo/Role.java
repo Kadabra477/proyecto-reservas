@@ -13,9 +13,9 @@ public class Role {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Enumerated(EnumType.STRING) // Guarda el enum como String (ej. "ROLE_USER", "ROLE_ADMIN")
+    @Enumerated(EnumType.STRING)
     @Column(length = 20)
-    private ERole name; // Enum para los nombres de roles
+    private ERole name;
 
     public Role(ERole name) {
         this.name = name;

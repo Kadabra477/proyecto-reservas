@@ -11,10 +11,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -85,10 +84,10 @@ public class ComplejoControlador {
             return new ResponseEntity<>(nuevoComplejo, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear complejo: {}", e.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(null); // No ResponseStatusException
         } catch (Exception e) {
             log.error("Error inesperado al crear complejo:", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al crear complejo.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null); // No ResponseStatusException
         }
     }
 
@@ -99,18 +98,17 @@ public class ComplejoControlador {
         String username = authentication.getName();
         log.info("PUT /api/complejos/{} - Actualizando complejo: {} por usuario: {}", id, complejo.getNombre(), username);
         try {
-            // El servicio se asegura de cargar el propietario para la validación de permisos
             Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejo, username);
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
             log.warn("Error al actualizar complejo {}: {}", id, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.notFound().build(); // No ResponseStatusException
         } catch (SecurityException e) {
             log.warn("Acceso denegado para actualizar complejo {}: {}", id, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); // No ResponseStatusException
         } catch (Exception e) {
             log.error("Error inesperado al actualizar complejo {}:", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al actualizar complejo.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // No ResponseStatusException
         }
     }
 
@@ -125,13 +123,13 @@ public class ComplejoControlador {
             return new ResponseEntity<>(HttpStatus.NO_CONTENT);
         } catch (IllegalArgumentException e) {
             log.warn("Error al eliminar complejo {}: {}", id, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.notFound().build(); // No ResponseStatusException
         } catch (SecurityException e) {
             log.warn("Acceso denegado para eliminar complejo {}: {}", id, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); // No ResponseStatusException
         } catch (Exception e) {
             log.error("Error inesperado al eliminar complejo {}:", id, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al eliminar complejo.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // No ResponseStatusException
         }
     }
 }

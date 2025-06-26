@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true) // Habilitar @PreAuthorize
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -77,7 +77,6 @@ public class SecurityConfig {
                     }
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // Rutas públicas que no requieren autenticación
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
@@ -86,47 +85,40 @@ public class SecurityConfig {
                                 "/error", "/error-404"
                         ).permitAll()
 
-                        // Rutas de Complejos - Obtener todos y por ID DEBEN SER públicos
                         .requestMatchers(HttpMethod.GET, "/api/complejos", "/api/complejos/**").permitAll()
-                        // El endpoint de disponibilidad por tipo de cancha es público
                         .requestMatchers(HttpMethod.GET, "/api/reservas/disponibilidad-por-tipo").permitAll()
 
-                        // Nuevas rutas para propietarios de complejos
-                        .requestMatchers("/api/complejos/mis-complejos").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Propietarios ven sus complejos
-                        .requestMatchers(HttpMethod.POST, "/api/complejos").hasRole("ADMIN") // Solo ADMIN crea complejos (y los asigna a un dueño)
-                        // Para PUT/DELETE de complejos, la autorización a nivel de recurso se hace en el servicio
+                        .requestMatchers("/api/complejos/mis-complejos").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers(HttpMethod.POST, "/api/complejos").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
-                        // Rutas de Reservas protegidas por Authentication (para cualquier usuario logueado)
                         .requestMatchers("/api/reservas/crear").authenticated()
-                        .requestMatchers("/api/reservas/usuario").authenticated() // Usuario ve sus reservas
+                        .requestMatchers("/api/reservas/usuario").authenticated()
 
-                        // Rutas de Reservas para Admin o Propietario (filtro en servicio)
+                        // Rutas de Reservas para Admin o Propietario (o ambas, el servicio filtra)
                         .requestMatchers("/api/reservas/admin/todas").hasAnyRole("ADMIN", "COMPLEX_OWNER")
-                        .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Para ver una reserva específica
-                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER") // Cualquier usuario autenticado puede ver sus reservas si tiene el ID
+                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER") // Como ya estaba, el servicio valida a nivel de recurso
                         .requestMatchers("/api/reservas/{id}/confirmar").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}/marcar-pagada").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}/equipos").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers(HttpMethod.DELETE, "/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER")
-                        // Este endpoint lo protegeremos también si quieres que los dueños puedan ver sus reservas por tipo
-                        .requestMatchers(HttpMethod.GET, "/api/reservas/complejo/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers(HttpMethod.GET, "/api/reservas/complejo/**").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Este es el endpoint complejoId/tipoCancha
 
-
-                        // Rutas de Pagos
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
 
-                        // Rutas de Usuario (perfil)
                         .requestMatchers("/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN") // Solo ADMIN puede listar todos los usuarios
+                        // El endpoint de roles y activación está en AuthController ahora.
+                        // .requestMatchers(HttpMethod.PUT, "/api/users/{userId}/roles").hasRole("ADMIN") // ESTE YA NO VA AQUI
+                        // .requestMatchers(HttpMethod.PUT, "/api/users/admin/users/{userId}/activate").hasRole("ADMIN") // ESTE YA NO VA AQUI
 
-                        // Rutas de Estadísticas (solo ADMIN o COMPLEX_OWNER)
                         .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
-
-                        .anyRequest().authenticated() // Cualquier otra petición requiere autenticación
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class)
                 .oauth2Login(oauth2 -> oauth2
@@ -176,7 +168,7 @@ public class SecurityConfig {
                         .filter(a -> a.startsWith("ROLE_"))
                         .map(a -> a.substring(5))
                         .findFirst()
-                        .orElse("USER");
+                        .orElse("USER"); // Si no tiene un rol específico, default a USER
 
                 if (email == null || email.isBlank()) {
                     log.error("OAuth2 user email is null or blank");
@@ -185,11 +177,15 @@ public class SecurityConfig {
                 }
 
                 try {
+                    // Genera el JWT con el rol encontrado (que es un String simple como "ADMIN" o "USER")
                     String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
                     targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
+                    // Aquí, el frontend espera un string 'role' y lo procesa a un array.
+                    // Si el frontend necesita un array directamente aquí, deberías cambiar el `JwtResponse`
+                    // y el método `generateTokenFromEmail` en JWTUtil para manejar una lista de roles.
                     targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
