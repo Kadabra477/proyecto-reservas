@@ -104,30 +104,33 @@ public class ComplejoServicio {
         return complejoRepositorio.save(nuevoComplejo);
     }
 
+    // Con FetchType.EAGER, findAll() base ya cargará el propietario
     @Transactional(readOnly = true)
     public List<Complejo> listarTodosLosComplejos() {
-        log.info("Listando todos los complejos (con propietario cargado).");
-        return complejoRepositorio.findAllWithPropietario(); // Usa el método con JOIN FETCH
+        log.info("Listando todos los complejos (con propietario EAGER).");
+        return complejoRepositorio.findAll();
     }
 
+    // Con FetchType.EAGER, findByPropietario() base ya cargará el propietario
     @Transactional(readOnly = true)
     public List<Complejo> listarComplejosPorPropietario(String propietarioUsername) {
-        log.info("Listando complejos para propietario: {} (con propietario cargado).", propietarioUsername);
+        log.info("Listando complejos para propietario: {} (con propietario EAGER).", propietarioUsername);
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
-        return complejoRepositorio.findByPropietarioWithPropietario(propietario); // Usa el método con JOIN FETCH
+        return complejoRepositorio.findByPropietario(propietario);
     }
 
     @Transactional(readOnly = true)
     public Optional<Complejo> buscarComplejoPorId(Long id) {
         log.info("Buscando complejo por ID: {}.", id);
-        return complejoRepositorio.findById(id); // Este método no necesita fetch para uso general
+        return complejoRepositorio.findById(id);
     }
 
+    // Mantenemos este método para el controlador ya que es explícito que se necesita el propietario para ciertas operaciones
     @Transactional(readOnly = true)
     public Optional<Complejo> buscarComplejoPorIdWithPropietario(Long id) {
-        log.info("Buscando complejo por ID: {} (con propietario cargado).", id);
-        return complejoRepositorio.findByIdWithPropietario(id); // Usa el método con JOIN FETCH para el controlador
+        log.info("Buscando complejo por ID: {} (con propietario cargado explícitamente para controlador/seguridad).", id);
+        return complejoRepositorio.findById(id); // Con EAGER, findById() ya cargará el propietario.
     }
 
 
@@ -135,8 +138,9 @@ public class ComplejoServicio {
     public Complejo actualizarComplejo(Long id, Complejo complejoDetails, String editorUsername) {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
-        // Importante: Cargar el complejo CON el propietario para verificar permisos
-        Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
+        // Cargar el complejo CON el propietario para verificar permisos
+        // Usamos findById() porque FetchType.EAGER ya carga el propietario
+        Complejo complejoExistente = complejoRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
         User editor = usuarioServicio.findByUsername(editorUsername)
@@ -170,8 +174,9 @@ public class ComplejoServicio {
     public void eliminarComplejo(Long id, String eliminadorUsername) {
         log.info("Eliminando complejo con ID: {} por usuario: {}", id, eliminadorUsername);
 
-        // Importante: Cargar el complejo CON el propietario para verificar permisos
-        Complejo complejoExistente = complejoRepositorio.findByIdWithPropietario(id)
+        // Cargar el complejo CON el propietario para verificar permisos
+        // Usamos findById() porque FetchType.EAGER ya carga el propietario
+        Complejo complejoExistente = complejoRepositorio.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + id));
 
         User eliminador = usuarioServicio.findByUsername(eliminadorUsername)

@@ -1,6 +1,7 @@
 package com.example.reservafutbol.Modelo;
 
-// ELIMINAR: import com.fasterxml.jackson.annotation.JsonIgnore;
+// Asegúrate de que esta importación NO esté: import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -20,19 +21,25 @@ public class Complejo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String nombre;
+
     private String descripcion;
     private String ubicacion;
     private String telefono;
     private String fotoUrl;
 
+    @Column(nullable = false)
     private LocalTime horarioApertura;
+    @Column(nullable = false)
     private LocalTime horarioCierre;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Se mantiene LAZY, el FETCH se hace en el repositorio
+    // **CAMBIO CLAVE AQUÍ:** De LAZY a EAGER
+    @ManyToOne(fetch = FetchType.EAGER) // ¡Cambiado a EAGER!
     @JoinColumn(name = "propietario_id")
     private User propietario; // ¡Sin @JsonIgnore aquí!
 
+    // Resto de tus colecciones (Mapas) que ya están en EAGER y correctas
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "complejo_cancha_counts", joinColumns = @JoinColumn(name = "complejo_id"))
     @MapKeyColumn(name = "tipo_cancha")
@@ -62,6 +69,7 @@ public class Complejo {
     @MapKeyColumn(name = "tipo_cancha")
     @Column(name = "techo")
     private Map<String, Boolean> canchaTecho = new HashMap<>();
+
 
     public Complejo(String nombre, String ubicacion, String telefono, LocalTime horarioApertura, LocalTime horarioCierre) {
         this.nombre = nombre;

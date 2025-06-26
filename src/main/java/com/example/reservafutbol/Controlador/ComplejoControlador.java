@@ -26,35 +26,35 @@ public class ComplejoControlador {
     @Autowired
     private ComplejoServicio complejoServicio;
 
-    // Obtener todos los complejos (público)
+    // Obtener todos los complejos (público) - ADMIN debe usar este en el frontend
     @GetMapping
     public ResponseEntity<List<Complejo>> obtenerTodosLosComplejos() {
         log.info("GET /api/complejos - Obteniendo todos los complejos.");
-        List<Complejo> complejos = complejoServicio.listarTodosLosComplejos(); // Usa el método que carga propietario
+        List<Complejo> complejos = complejoServicio.listarTodosLosComplejos(); // Llama a findAll() base
         if (complejos.isEmpty()) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(complejos);
     }
 
-    // Obtener complejos del propietario actual (ROLE_COMPLEX_OWNER, ROLE_ADMIN)
+    // Obtener complejos del propietario actual (ROLE_COMPLEX_OWNER usa este en el frontend)
     @GetMapping("/mis-complejos")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<List<Complejo>> obtenerMisComplejos(Authentication authentication) {
         String username = authentication.getName();
         log.info("GET /api/complejos/mis-complejos - Obteniendo complejos para usuario: {}", username);
-        List<Complejo> complejos = complejoServicio.listarComplejosPorPropietario(username); // Usa el método que carga propietario
+        List<Complejo> complejos = complejoServicio.listarComplejosPorPropietario(username); // Llama a findByPropietario() base
         if (complejos.isEmpty()) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(complejos);
     }
 
-    // Obtener complejo por ID (público)
+    // Obtener complejo por ID (público, pero también usado por AdminPanel al editar)
     @GetMapping("/{id}")
     public ResponseEntity<Complejo> obtenerComplejoPorId(@PathVariable Long id) {
         log.info("GET /api/complejos/{} - Obteniendo complejo por ID.", id);
-        return complejoServicio.buscarComplejoPorIdWithPropietario(id) // Usa el método que carga propietario
+        return complejoServicio.buscarComplejoPorId(id) // Llama a findById() base (EAGER carga el propietario)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -99,6 +99,7 @@ public class ComplejoControlador {
         String username = authentication.getName();
         log.info("PUT /api/complejos/{} - Actualizando complejo: {} por usuario: {}", id, complejo.getNombre(), username);
         try {
+            // El servicio se asegura de cargar el propietario para la validación de permisos
             Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejo, username);
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
