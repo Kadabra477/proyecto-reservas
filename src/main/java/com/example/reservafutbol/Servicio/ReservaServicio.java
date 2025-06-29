@@ -53,9 +53,6 @@ public class ReservaServicio {
     private String adminEmail;
 
     private static final int SLOT_DURATION_MINUTES = 60;
-    // Estos son los valores por defecto del complejo, no de la app global
-    // private static final LocalTime DEFAULT_OPEN_TIME = LocalTime.of(10, 0);
-    // private static final LocalTime DEFAULT_LAST_BOOKABLE_HOUR_START = LocalTime.of(23, 0);
 
     @Transactional(readOnly = true)
     public List<Reserva> listarReservasPorComplejo(Long complejoId, String requesterUsername) {
@@ -93,9 +90,6 @@ public class ReservaServicio {
             }
         }
 
-        // Se mantiene findAll y filtro en memoria para simplicidad, pero si la cantidad de reservas es muy grande,
-        // sería más eficiente crear un método find en el repositorio como:
-        // reservaRepositorio.findByComplejoIdAndTipoCanchaReservada(complejoId, tipoCancha);
         return reservaRepositorio.findAll().stream()
                 .filter(r -> r.getComplejo().getId().equals(complejoId) && r.getTipoCanchaReservada().equals(tipoCancha))
                 .collect(Collectors.toList());
@@ -127,12 +121,14 @@ public class ReservaServicio {
 
         Complejo complejoAsignado = reserva.getComplejo();
 
+        // MODIFICADO: Esta validación de tiempo pasado ya la debería hacer el frontend,
+        // pero la mantenemos aquí como un respaldo de seguridad, comparando el final del slot
         LocalDateTime now = LocalDateTime.now();
-        if (reserva.getFechaHora().isBefore(now)) {
+        LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
+        if (slotEndTime.isBefore(now)) { // Si el slot ya terminó
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
-        LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
 
         List<Reserva> conflictosExistentes = reservaRepositorio.findConflictingReservationsForPool(
                 complejoAsignado.getId(),
@@ -149,7 +145,27 @@ public class ReservaServicio {
             throw new IllegalArgumentException("No hay canchas disponibles para el tipo y horario seleccionado en este complejo. Por favor, elige otro.");
         }
 
-        String nombreCanchaAsignada = reserva.getTipoCanchaReservada() + " - Instancia " + (conflictosExistentes.size() + 1);
+        // MODIFICADO: La asignación de instancia debe ser más robusta
+        // para asegurar que las instancias se distribuyan equitativamente
+        Set<String> nombresCanchasOcupadasEnSlot = conflictosExistentes.stream()
+                .map(Reserva::getNombreCanchaAsignada)
+                .collect(Collectors.toSet());
+
+        String nombreCanchaAsignada = null;
+        for (int i = 1; i <= totalCanchasDeEsteTipo; i++) {
+            String posibleNombre = reserva.getTipoCanchaReservada() + " - Instancia " + i;
+            if (!nombresCanchasOcupadasEnSlot.contains(posibleNombre)) {
+                nombreCanchaAsignada = posibleNombre;
+                break;
+            }
+        }
+
+        if (nombreCanchaAsignada == null) {
+            // Este caso no debería ocurrir si la validación previa de conflictos.size() es correcta,
+            // pero es un fallback.
+            log.error("Error lógico: Se intentó crear una reserva pero no se pudo asignar una instancia de cancha a pesar de que el conteo de disponibilidad indicó que había.");
+            throw new IllegalStateException("No se pudo asignar una cancha disponible. Intenta nuevamente.");
+        }
         reserva.setNombreCanchaAsignada(nombreCanchaAsignada);
 
         if (reserva.getPrecio() == null || reserva.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
@@ -168,7 +184,7 @@ public class ReservaServicio {
         reserva.setMercadoPagoPaymentId(null);
 
         Reserva reservaGuardada = reservaRepositorio.save(reserva);
-        log.info("Reserva creada con ID: {} para complejo {} (tipo: {}) y asignada a: {}",
+        log.info("Reserva creada con ID: {} para complejo '{}' (tipo: '{}'), asignada a: '{}'",
                 reservaGuardada.getId(), complejoAsignado.getNombre(), reserva.getTipoCanchaReservada(), nombreCanchaAsignada);
 
         try {
@@ -215,11 +231,8 @@ public class ReservaServicio {
         if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado()) || "pendiente".equalsIgnoreCase(r.getEstado())) {
             r.setEstado("confirmada");
         } else if ("pendiente_pago_efectivo".equalsIgnoreCase(r.getEstado())) {
-            // Si estaba en efectivo, y se confirma, se mantiene en este estado o se cambia a 'confirmada'
-            // Depende de la lógica de negocio si "confirmada" es un estado final o solo "pagada"
-            r.setEstado("confirmada"); // Considera cambiar a 'confirmada' si es una acción manual de confirmación.
+            r.setEstado("confirmada");
         }
-        // Si ya está pagada, cancelada o rechazada, no se hace nada.
 
         Reserva reservaConfirmada = reservaRepositorio.save(r);
         log.info("Reserva con ID: {} confirmada exitosamente. Nuevo estado: {}", id, reservaConfirmada.getEstado());
@@ -255,7 +268,7 @@ public class ReservaServicio {
             log.info("Usuario {} es ADMIN, listando todas las reservas del sistema.", requesterUsername);
             return reservaRepositorio.findAll();
         } else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
-            log.info("Usuario {} es COMPLEX_OWNER, listando reservas de sus complejos.", requesterUsername);
+            log.info("Usuario {} es COMPLEX_OWNER, listando reservas de sus complejos.");
             List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
 
             if (complejosDelPropietario.isEmpty()) {
@@ -303,7 +316,6 @@ public class ReservaServicio {
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
-        // El estado se actualizará vía @PreUpdate en la entidad Reserva
         Reserva updatedReserva = reservaRepositorio.save(reserva);
         log.info("Reserva con ID {} marcada como pagada. Nuevo estado: {}", updatedReserva.getId(), updatedReserva.getEstado());
         return updatedReserva;
@@ -363,6 +375,14 @@ public class ReservaServicio {
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
+        // --- INICIO DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
+        LocalDateTime now = LocalDateTime.now();
+        if (slotEndTime.isBefore(now)) { // Si el slot ya terminó
+            log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado, marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
+            return 0; // Si el slot ya pasó, no hay disponibilidad
+        }
+        // --- FIN DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
+
         List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
                 complejoId,
                 tipoCancha,
@@ -373,15 +393,7 @@ public class ReservaServicio {
         int bookedCount = conflictos.size();
         int availableCount = totalCanchasDeEsteTipo - bookedCount;
 
-        availableCount = Math.max(0, availableCount);
-
-        if (fecha.isEqual(LocalDate.now())) {
-            LocalTime nowTime = LocalTime.now().truncatedTo(ChronoUnit.MINUTES);
-            if (hora.isBefore(nowTime) || hora.equals(nowTime)) {
-                log.debug("Slot {} para tipo {} en complejo {} está en el pasado o presente, marcando como 0 disponibles.", hora, tipoCancha, complejoId);
-                availableCount = 0;
-            }
-        }
+        availableCount = Math.max(0, availableCount); // Asegura que nunca sea negativo
 
         log.debug("Encontradas {} canchas de tipo '{}' disponibles en complejo '{}' para {} a las {}. (Total: {}, Reservadas: {})",
                 availableCount, tipoCancha, complejo.getNombre(), fecha, hora, totalCanchasDeEsteTipo, bookedCount);
@@ -410,12 +422,20 @@ public class ReservaServicio {
                 slotEndTime
         );
 
-        if (conflictos.size() < totalCanchasDeEsteTipo) {
-            String nombreInstancia = tipoCancha + " - Instancia " + (conflictos.size() + 1);
-            log.debug("Nombre de instancia asignado: {}", nombreInstancia);
-            return Optional.of(nombreInstancia);
-        }
+        // MODIFICADO: Asignación de instancia más inteligente para generar "Instancia X"
+        // que no esté ya ocupada.
+        Set<String> nombresCanchasOcupadasEnSlot = conflictos.stream()
+                .map(Reserva::getNombreCanchaAsignada)
+                .collect(Collectors.toSet());
 
+        for (int i = 1; i <= totalCanchasDeEsteTipo; i++) {
+            String posibleNombre = tipoCancha + " - Instancia " + i;
+            if (!nombresCanchasOcupadasEnSlot.contains(posibleNombre)) {
+                log.debug("Nombre de instancia asignado: {}", posibleNombre);
+                return Optional.of(posibleNombre);
+            }
+        }
+        // Si llegamos aquí, significa que todas las instancias posibles están ocupadas.
         log.debug("Todas las canchas de tipo '{}' en complejo '{}' están ocupadas para el slot {}.", tipoCancha, complejo.getNombre(), fecha + " " + hora);
         return Optional.empty();
     }
@@ -432,7 +452,7 @@ public class ReservaServicio {
             log.info("Generando estadísticas globales (ADMIN).");
             reservasParaEstadisticas = reservaRepositorio.findAll();
         } else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
-            log.info("Generando estadísticas para complejos de propietario {}.", requesterUsername);
+            log.info("Generando estadísticas para complejos de propietario {}.");
             List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
 
             if (complejosDelPropietario.isEmpty()) {
@@ -445,7 +465,7 @@ public class ReservaServicio {
             reservasParaEstadisticas = reservaRepositorio.findByComplejoIdIn(idsComplejos);
         } else {
             log.warn("Usuario {} no tiene rol de ADMIN o COMPLEX_OWNER para ver estadísticas.", requesterUsername);
-            return new EstadisticasResponse(BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>());
+            return Collections.emptyList();
         }
 
         BigDecimal ingresosTotalesConfirmados = reservasParaEstadisticas.stream()
@@ -453,9 +473,6 @@ public class ReservaServicio {
                 .map(Reserva::getPrecio)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Agregué el estado 'confirmada' para totalReservasConfirmadas
-        // Considera si "pendiente_pago_efectivo" debe contar como "confirmada" para este propósito.
-        // Lo dejé como estaba en tu código original para estos estados.
         Long totalReservasConfirmadas = reservasParaEstadisticas.stream()
                 .filter(reserva -> "pagada".equalsIgnoreCase(reserva.getEstado()) || "confirmada".equalsIgnoreCase(reserva.getEstado()) || "pendiente_pago_efectivo".equalsIgnoreCase(reserva.getEstado()))
                 .count();
