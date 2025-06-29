@@ -11,8 +11,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.List;
-import java.util.Set;
 
 @Entity
 @Table(name = "reservas")
@@ -64,21 +62,6 @@ public class Reserva {
     private String metodoPago;
     private LocalDateTime fechaPago;
     private String mercadoPagoPaymentId;
-
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "reserva_jugadores", joinColumns = @JoinColumn(name = "reserva_id"))
-    @Column(name = "jugador")
-    private List<String> jugadores;
-
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "reserva_equipo1", joinColumns = @JoinColumn(name = "reserva_id"))
-    @Column(name = "jugador_equipo1")
-    private Set<String> equipo1;
-
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "reserva_equipo2", joinColumns = @JoinColumn(name = "reserva_id"))
-    @Column(name = "jugador_equipo2")
-    private Set<String> equipo2;
 
 
     @PreUpdate

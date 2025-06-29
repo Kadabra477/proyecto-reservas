@@ -322,44 +322,6 @@ public class ReservaServicio {
         return updatedReserva;
     }
 
-    @Transactional
-    public Reserva generarEquipos(Long id, String generadorUsername) {
-        log.info("Generando equipos para reserva ID: {} por usuario: {}", id, generadorUsername);
-        Reserva r = reservaRepositorio.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
-
-        User generador = usuarioRepositorio.findByUsername(generadorUsername)
-                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + generadorUsername));
-
-        if (generador.getRoles().stream().noneMatch(role -> role.getName().equals(ERole.ROLE_ADMIN))) {
-            if (r.getComplejo() == null || r.getComplejo().getPropietario() == null || !r.getComplejo().getPropietario().getId().equals(generador.getId())) {
-                throw new SecurityException("Acceso denegado: No tienes permisos para generar equipos para esta reserva.");
-            }
-        }
-
-        List<String> jugadores = r.getJugadores();
-        if (jugadores == null || jugadores.size() < 2) {
-            throw new IllegalArgumentException("Debes ingresar al menos 2 jugadores para armar equipos.");
-        }
-        Collections.shuffle(jugadores);
-
-        Set<String> equipo1 = new HashSet<>();
-        Set<String> equipo2 = new HashSet<>();
-
-        for (int i = 0; i < jugadores.size(); i++) {
-            if (i % 2 == 0) {
-                equipo1.add(jugadores.get(i));
-            } else {
-                equipo2.add(jugadores.get(i));
-            }
-        }
-        r.setEquipo1(equipo1);
-        r.setEquipo2(equipo2);
-        Reserva reservaGuardada = reservaRepositorio.save(r);
-        log.info("Equipos generados para reserva ID: {}", id);
-        return reservaGuardada;
-    }
-
     @Transactional(readOnly = true)
     public int countAvailableCanchasForSlot(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
         log.info("Contando canchas de tipo '{}' disponibles en complejo ID: {} para {} a las {}", tipoCancha, complejoId, fecha, hora);

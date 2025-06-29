@@ -5,13 +5,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import com.example.reservafutbol.Modelo.Reserva; // Importa la entidad Reserva
-import com.example.reservafutbol.Modelo.Complejo; // Importa la entidad Complejo
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-// import java.util.Date; // Removido
-import java.util.List;
-import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -37,9 +33,6 @@ public class ReservaDetalleDTO {
     private String estado;
     private String metodoPago;
     private String mercadoPagoPaymentId;
-    private List<String> jugadores;
-    private Set<String> equipo1;
-    private Set<String> equipo2;
 
     // Constructor personalizado para mapear desde la entidad Reserva
     public ReservaDetalleDTO(Reserva reserva) {
@@ -63,8 +56,5 @@ public class ReservaDetalleDTO {
         this.estado = reserva.getEstado();
         this.metodoPago = reserva.getMetodoPago();
         this.mercadoPagoPaymentId = reserva.getMercadoPagoPaymentId();
-        this.jugadores = reserva.getJugadores();
-        this.equipo1 = reserva.getEquipo1();
-        this.equipo2 = reserva.getEquipo2();
     }
 }
