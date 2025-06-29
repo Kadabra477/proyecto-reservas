@@ -123,10 +123,10 @@ public class ReservaServicio {
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
+        // Validar que el slot no haya terminado. Un slot de 1 hora termina 60 minutos después de su inicio.
         if (slotEndTime.isBefore(now)) {
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
-
 
         List<Reserva> conflictosExistentes = reservaRepositorio.findConflictingReservationsForPool(
                 complejoAsignado.getId(),
@@ -193,7 +193,8 @@ public class ReservaServicio {
                 String ownerEmail = reserva.getComplejo().getPropietario().getUsername();
                 emailService.sendNewReservationNotification(reservaGuardada, ownerEmail);
                 log.info("Notificación de nueva reserva enviada al dueño del complejo {}.", ownerEmail);
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 log.error("Error al enviar notificación de nueva reserva al dueño del complejo: {}", e.getMessage(), e);
             }
         }
@@ -369,11 +370,15 @@ public class ReservaServicio {
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
+        // --- INICIO DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA (MÁS PERMISIVA) ---
         LocalDateTime now = LocalDateTime.now();
+        // El slot solo se marca como 0 disponible si YA TERMINÓ.
+        // Si el slot está en curso o en el futuro, la disponibilidad es calculada.
         if (slotEndTime.isBefore(now)) {
-            log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado, marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
+            log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado (ya terminó), marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
             return 0;
         }
+        // --- FIN DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
 
         List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
                 complejoId,
@@ -385,7 +390,7 @@ public class ReservaServicio {
         int bookedCount = conflictos.size();
         int availableCount = totalCanchasDeEsteTipo - bookedCount;
 
-        availableCount = Math.max(0, availableCount);
+        availableCount = Math.max(0, availableCount); // Asegura que nunca sea negativo
 
         log.debug("Encontradas {} canchas de tipo '{}' disponibles en complejo '{}' para {} a las {}. (Total: {}, Reservadas: {})",
                 availableCount, tipoCancha, complejo.getNombre(), fecha, hora, totalCanchasDeEsteTipo, bookedCount);
@@ -446,7 +451,6 @@ public class ReservaServicio {
 
             if (complejosDelPropietario.isEmpty()) {
                 log.warn("Propietario {} no tiene complejos, no hay estadísticas para mostrar.", requesterUsername);
-                // Devuelve un EstadisticasResponse vacío en lugar de una lista vacía
                 return new EstadisticasResponse(
                         BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>()
                 );
@@ -457,7 +461,6 @@ public class ReservaServicio {
             reservasParaEstadisticas = reservaRepositorio.findByComplejoIdIn(idsComplejos);
         } else {
             log.warn("Usuario {} no tiene rol de ADMIN o COMPLEX_OWNER para ver estadísticas.", requesterUsername);
-            // Devuelve un EstadisticasResponse vacío en lugar de una lista vacía
             return new EstadisticasResponse(
                     BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>()
             );

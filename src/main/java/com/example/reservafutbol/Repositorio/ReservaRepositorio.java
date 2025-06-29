@@ -16,7 +16,6 @@ import java.util.Optional;
 @Repository
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
-    // NUEVO MÉTODO: Buscar reservas que se solapan para un COMPLEJO y TIPO DE CANCHA específico
     @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
             "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
             "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', MINUTE, 60, r.fechaHora) > :startTime)")
@@ -27,7 +26,6 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
             @Param("endTime") LocalDateTime endTime
     );
 
-    // NUEVO MÉTODO: Buscar todas las reservas de un COMPLEJO y TIPO DE CANCHA en una fecha específica
     @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
             "FUNCTION('DATE', r.fechaHora) = :fecha AND " +
             "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp')")
@@ -37,11 +35,9 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
             @Param("fecha") LocalDate fecha
     );
 
-    // Nuevo método: Obtener reservas por una lista de IDs de complejo (para propietarios)
     @EntityGraph(attributePaths = {"usuario", "complejo"})
     List<Reserva> findByComplejoIdIn(List<Long> complejoIds);
 
-    // Nuevo método: Obtener reservas de un complejo específico (para propietarios)
     @EntityGraph(attributePaths = {"usuario", "complejo"})
     List<Reserva> findByComplejoId(Long complejoId);
 
