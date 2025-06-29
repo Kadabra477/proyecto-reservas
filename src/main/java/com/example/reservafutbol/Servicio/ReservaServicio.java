@@ -121,11 +121,9 @@ public class ReservaServicio {
 
         Complejo complejoAsignado = reserva.getComplejo();
 
-        // MODIFICADO: Esta validación de tiempo pasado ya la debería hacer el frontend,
-        // pero la mantenemos aquí como un respaldo de seguridad, comparando el final del slot
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
-        if (slotEndTime.isBefore(now)) { // Si el slot ya terminó
+        if (slotEndTime.isBefore(now)) {
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
@@ -145,8 +143,6 @@ public class ReservaServicio {
             throw new IllegalArgumentException("No hay canchas disponibles para el tipo y horario seleccionado en este complejo. Por favor, elige otro.");
         }
 
-        // MODIFICADO: La asignación de instancia debe ser más robusta
-        // para asegurar que las instancias se distribuyan equitativamente
         Set<String> nombresCanchasOcupadasEnSlot = conflictosExistentes.stream()
                 .map(Reserva::getNombreCanchaAsignada)
                 .collect(Collectors.toSet());
@@ -161,8 +157,6 @@ public class ReservaServicio {
         }
 
         if (nombreCanchaAsignada == null) {
-            // Este caso no debería ocurrir si la validación previa de conflictos.size() es correcta,
-            // pero es un fallback.
             log.error("Error lógico: Se intentó crear una reserva pero no se pudo asignar una instancia de cancha a pesar de que el conteo de disponibilidad indicó que había.");
             throw new IllegalStateException("No se pudo asignar una cancha disponible. Intenta nuevamente.");
         }
@@ -375,13 +369,11 @@ public class ReservaServicio {
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
-        // --- INICIO DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
         LocalDateTime now = LocalDateTime.now();
-        if (slotEndTime.isBefore(now)) { // Si el slot ya terminó
+        if (slotEndTime.isBefore(now)) {
             log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado, marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
-            return 0; // Si el slot ya pasó, no hay disponibilidad
+            return 0;
         }
-        // --- FIN DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
 
         List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
                 complejoId,
@@ -393,7 +385,7 @@ public class ReservaServicio {
         int bookedCount = conflictos.size();
         int availableCount = totalCanchasDeEsteTipo - bookedCount;
 
-        availableCount = Math.max(0, availableCount); // Asegura que nunca sea negativo
+        availableCount = Math.max(0, availableCount);
 
         log.debug("Encontradas {} canchas de tipo '{}' disponibles en complejo '{}' para {} a las {}. (Total: {}, Reservadas: {})",
                 availableCount, tipoCancha, complejo.getNombre(), fecha, hora, totalCanchasDeEsteTipo, bookedCount);
@@ -422,8 +414,6 @@ public class ReservaServicio {
                 slotEndTime
         );
 
-        // MODIFICADO: Asignación de instancia más inteligente para generar "Instancia X"
-        // que no esté ya ocupada.
         Set<String> nombresCanchasOcupadasEnSlot = conflictos.stream()
                 .map(Reserva::getNombreCanchaAsignada)
                 .collect(Collectors.toSet());
@@ -435,7 +425,6 @@ public class ReservaServicio {
                 return Optional.of(posibleNombre);
             }
         }
-        // Si llegamos aquí, significa que todas las instancias posibles están ocupadas.
         log.debug("Todas las canchas de tipo '{}' en complejo '{}' están ocupadas para el slot {}.", tipoCancha, complejo.getNombre(), fecha + " " + hora);
         return Optional.empty();
     }
@@ -452,12 +441,15 @@ public class ReservaServicio {
             log.info("Generando estadísticas globales (ADMIN).");
             reservasParaEstadisticas = reservaRepositorio.findAll();
         } else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
-            log.info("Generando estadísticas para complejos de propietario {}.");
+            log.info("Generando estadísticas para complejos de propietario {}.", requesterUsername);
             List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
 
             if (complejosDelPropietario.isEmpty()) {
                 log.warn("Propietario {} no tiene complejos, no hay estadísticas para mostrar.", requesterUsername);
-                return new EstadisticasResponse(BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>());
+                // Devuelve un EstadisticasResponse vacío en lugar de una lista vacía
+                return new EstadisticasResponse(
+                        BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>()
+                );
             }
             List<Long> idsComplejos = complejosDelPropietario.stream()
                     .map(Complejo::getId)
@@ -465,7 +457,10 @@ public class ReservaServicio {
             reservasParaEstadisticas = reservaRepositorio.findByComplejoIdIn(idsComplejos);
         } else {
             log.warn("Usuario {} no tiene rol de ADMIN o COMPLEX_OWNER para ver estadísticas.", requesterUsername);
-            return Collections.emptyList();
+            // Devuelve un EstadisticasResponse vacío en lugar de una lista vacía
+            return new EstadisticasResponse(
+                    BigDecimal.ZERO, 0L, 0L, 0L, new HashMap<>(), new HashMap<>()
+            );
         }
 
         BigDecimal ingresosTotalesConfirmados = reservasParaEstadisticas.stream()
