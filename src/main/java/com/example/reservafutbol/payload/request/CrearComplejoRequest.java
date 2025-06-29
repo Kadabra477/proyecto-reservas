@@ -6,9 +6,9 @@ import lombok.AllArgsConstructor;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Email; // Añadido para validación de email
+import jakarta.validation.constraints.Email;
 import java.util.Map;
-import java.time.LocalTime; // Para los horarios
+import java.time.LocalTime;
 
 @Data
 @NoArgsConstructor
@@ -19,17 +19,15 @@ public class CrearComplejoRequest {
 
     @NotBlank(message = "El email del propietario es obligatorio")
     @Email(message = "El email del propietario debe ser válido.")
-    private String propietarioUsername; // El username (email) del usuario que será dueño del complejo
+    private String propietarioUsername;
 
-    // Detalles generales del complejo (ahora se pueden enviar desde el formulario de creación)
     private String descripcion;
     private String ubicacion;
     private String telefono;
-    private String fotoUrl;
+    // ¡Campo 'fotoUrl' ELIMINADO de aquí! La imagen se enviará como MultipartFile.
     private LocalTime horarioApertura;
     private LocalTime horarioCierre;
 
-    // Mapas para la cantidad y detalles de canchas por tipo
     @NotNull(message = "Debe especificar la cantidad de canchas por tipo.")
     private Map<String, Integer> canchaCounts;
 
