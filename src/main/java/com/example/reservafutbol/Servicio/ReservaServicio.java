@@ -20,6 +20,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId; // Importar ZoneId
+import java.time.ZonedDateTime; // Importar ZonedDateTime
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,6 +55,8 @@ public class ReservaServicio {
     private String adminEmail;
 
     private static final int SLOT_DURATION_MINUTES = 60;
+    // Definir la zona horaria de Argentina
+    private static final ZoneId ARGENTINA_ZONE_ID = ZoneId.of("America/Argentina/Buenos_Aires");
 
     @Transactional(readOnly = true)
     public List<Reserva> listarReservasPorComplejo(Long complejoId, String requesterUsername) {
@@ -121,10 +125,12 @@ public class ReservaServicio {
 
         Complejo complejoAsignado = reserva.getComplejo();
 
-        LocalDateTime now = LocalDateTime.now();
+        // Obtener la hora actual en la zona horaria de Argentina
+        LocalDateTime nowArgentina = ZonedDateTime.now(ARGENTINA_ZONE_ID).toLocalDateTime();
         LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
-        // Validar que el slot no haya terminado. Un slot de 1 hora termina 60 minutos después de su inicio.
-        if (slotEndTime.isBefore(now)) {
+
+        // Validar que el slot no haya terminado.
+        if (slotEndTime.isBefore(nowArgentina)) { // Usar nowArgentina
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
@@ -263,7 +269,7 @@ public class ReservaServicio {
             log.info("Usuario {} es ADMIN, listando todas las reservas del sistema.", requesterUsername);
             return reservaRepositorio.findAll();
         } else if (requester.getRoles().stream().anyMatch(r -> r.getName().equals(ERole.ROLE_COMPLEX_OWNER))) {
-            log.info("Usuario {} es COMPLEX_OWNER, listando reservas de sus complejos.");
+            log.info("Generando estadísticas para complejos de propietario {}.", requesterUsername);
             List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(requester);
 
             if (complejosDelPropietario.isEmpty()) {
@@ -370,15 +376,14 @@ public class ReservaServicio {
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
-        // --- INICIO DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA (MÁS PERMISIVA) ---
-        LocalDateTime now = LocalDateTime.now();
-        // El slot solo se marca como 0 disponible si YA TERMINÓ.
-        // Si el slot está en curso o en el futuro, la disponibilidad es calculada.
-        if (slotEndTime.isBefore(now)) {
-            log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado (ya terminó), marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
+        // Obtener la hora actual en la zona horaria de Argentina
+        LocalDateTime nowArgentina = ZonedDateTime.now(ARGENTINA_ZONE_ID).toLocalDateTime();
+
+        // El slot solo se marca como 0 disponible si YA TERMINÓ en la hora de Argentina.
+        if (slotEndTime.isBefore(nowArgentina)) {
+            log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado (ya terminó en GMT-3), marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
             return 0;
         }
-        // --- FIN DE LA LÓGICA DE VALIDACIÓN DE TIEMPO MODIFICADA ---
 
         List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
                 complejoId,
