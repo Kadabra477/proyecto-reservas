@@ -83,28 +83,23 @@ public class AuthController {
                     .map(item -> item.getAuthority())
                     .collect(Collectors.toList());
 
-            // Si necesitas pasar un solo "rol principal" al frontend, tu lógica aquí es correcta.
-            // Sin embargo, en el frontend ya estamos usando un array de roles completo,
-            // por lo que este "mainRole" podría ser menos relevante si el frontend ya itera sobre el array.
-            String mainRole = "USER"; // Default
+            // Modificado: El mainRole ahora es el primer rol encontrado o "USER" por defecto
+            String mainRole = roles.isEmpty() ? "USER" : roles.get(0).replace("ROLE_", "");
             if (roles.contains(ERole.ROLE_ADMIN.name())) {
                 mainRole = ERole.ROLE_ADMIN.name().replace("ROLE_", "");
             } else if (roles.contains(ERole.ROLE_COMPLEX_OWNER.name())) {
                 mainRole = ERole.ROLE_COMPLEX_OWNER.name().replace("ROLE_", "");
-            } else if (roles.contains(ERole.ROLE_USER.name())) { // Asegura que 'USER' sea el default si no hay otros
-                mainRole = ERole.ROLE_USER.name().replace("ROLE_", "");
             }
+            // Ya no es necesario el else if (roles.contains(ERole.ROLE_USER.name())) porque USER sería el default o el primero si es el único.
+
 
             log.info("Login exitoso para {}. Rol principal: {}. Todos los roles: {}", userDetails.getUsername(), mainRole, roles);
 
-            // Se devuelve el mainRole como String. Si el frontend espera un array de roles,
-            // este DTO debería ser actualizado para devolver 'roles' (List<String>) en lugar de 'mainRole' (String).
-            // Ya que el frontend parece manejar un array, no se hace un cambio aquí, pero es algo a considerar si hay un desajuste.
             return ResponseEntity.ok(new JwtResponse(jwt,
                     userDetails.getId(),
                     userDetails.getUsername(),
                     userDetails.getNombreCompleto(),
-                    mainRole)); // O deberías devolver 'roles' aquí si el DTO lo soporta.
+                    mainRole));
         } catch (org.springframework.security.core.AuthenticationException e) {
             log.error("Error de autenticación durante el login para {}: {}", loginRequest.getUsername(), e.getMessage());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Usuario o contraseña incorrectos, o cuenta no activada.");
@@ -154,7 +149,6 @@ public class AuthController {
             return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
         } catch (UsernameNotFoundException e) {
             log.warn("Intento de reseteo de contraseña para email no registrado: {}", email);
-            // Esto es intencional para no revelar si el email existe o no por seguridad.
             return ResponseEntity.ok("Si tu email está registrado, recibirás un enlace para restablecer tu contraseña.");
         } catch (Exception e) {
             log.error("Error al solicitar reseteo de contraseña para {}: {}", email, e.getMessage(), e);

@@ -64,7 +64,7 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Corregido: .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handler -> handler.authenticationEntryPoint((request, response, authException) -> {
                     log.warn("Unauthorized access to '{}': {}", request.getRequestURI(), authException.getMessage());
                     String accept = request.getHeader("Accept");
@@ -98,8 +98,8 @@ public class SecurityConfig {
 
                         // Rutas de Reservas para Admin o Propietario (o ambas, el servicio filtra)
                         .requestMatchers("/api/reservas/admin/todas").hasAnyRole("ADMIN", "COMPLEX_OWNER")
-                        .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER") // Cualquier usuario autenticado puede ver sus reservas si tiene el ID
-                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER") // Como ya estaba, el servicio valida a nivel de recurso
+                        .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER")
+                        .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER")
                         .requestMatchers("/api/reservas/{id}/confirmar").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}/marcar-pagada").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}/equipos").hasAnyRole("ADMIN", "COMPLEX_OWNER")
@@ -112,11 +112,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN") // Solo ADMIN puede listar todos los usuarios
-                        // El endpoint de roles y activación está en AuthController ahora.
-                        // .requestMatchers(HttpMethod.PUT, "/api/users/{userId}/roles").hasRole("ADMIN") // ESTE YA NO VA AQUI
-                        // .requestMatchers(HttpMethod.PUT, "/api/users/admin/users/{userId}/activate").hasRole("ADMIN") // ESTE YA NO VA AQUI
 
-                        .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER")
+                        .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Mantenemos esta
 
                         .anyRequest().authenticated()
                 )
@@ -177,16 +174,12 @@ public class SecurityConfig {
                 }
 
                 try {
-                    // Genera el JWT con el rol encontrado (que es un String simple como "ADMIN" o "USER")
-                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
+                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role); // Asegura que 'role' aquí es String
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
                     targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
-                    // Aquí, el frontend espera un string 'role' y lo procesa a un array.
-                    // Si el frontend necesita un array directamente aquí, deberías cambiar el `JwtResponse`
-                    // y el método `generateTokenFromEmail` en JWTUtil para manejar una lista de roles.
-                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
+                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8); // Pasa el rol como string
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);
