@@ -83,14 +83,16 @@ public class AuthController {
                     .map(item -> item.getAuthority())
                     .collect(Collectors.toList());
 
-            // Modificado: El mainRole ahora es el primer rol encontrado o "USER" por defecto
-            String mainRole = roles.isEmpty() ? "USER" : roles.get(0).replace("ROLE_", "");
+            // CORREGIDO: Lógica para determinar el "mainRole" (el rol principal a enviar al frontend)
+            // Prioriza ADMIN, luego COMPLEX_OWNER, luego USER.
+            String mainRole = "USER";
             if (roles.contains(ERole.ROLE_ADMIN.name())) {
                 mainRole = ERole.ROLE_ADMIN.name().replace("ROLE_", "");
             } else if (roles.contains(ERole.ROLE_COMPLEX_OWNER.name())) {
                 mainRole = ERole.ROLE_COMPLEX_OWNER.name().replace("ROLE_", "");
             }
-            // Ya no es necesario el else if (roles.contains(ERole.ROLE_USER.name())) porque USER sería el default o el primero si es el único.
+            // Si no es ADMIN ni COMPLEX_OWNER, por defecto ya es USER (o cualquier otro rol que tenga).
+            // No se necesita un else if para ROLE_USER explícitamente a menos que haya otros roles de menor prioridad.
 
 
             log.info("Login exitoso para {}. Rol principal: {}. Todos los roles: {}", userDetails.getUsername(), mainRole, roles);

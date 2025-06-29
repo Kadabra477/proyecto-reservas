@@ -20,8 +20,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId; // Importar ZoneId
-import java.time.ZonedDateTime; // Importar ZonedDateTime
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -130,7 +130,7 @@ public class ReservaServicio {
         LocalDateTime slotEndTime = reserva.getFechaHora().plusMinutes(SLOT_DURATION_MINUTES);
 
         // Validar que el slot no haya terminado.
-        if (slotEndTime.isBefore(nowArgentina)) { // Usar nowArgentina
+        if (slotEndTime.isBefore(nowArgentina)) {
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
 

@@ -64,7 +64,8 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Corregido: .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // CORREGIDO: Usar .sessionManagement() directamente y pasar la política.
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handler -> handler.authenticationEntryPoint((request, response, authException) -> {
                     log.warn("Unauthorized access to '{}': {}", request.getRequestURI(), authException.getMessage());
                     String accept = request.getHeader("Accept");
@@ -80,7 +81,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
-                                "/api/auth/**", "/oauth2/**", "/login/oauth2/code/google",
+                                "/api/auth/**", "/oauth2/**", "/login/oauth2/code/google", // /api/auth/validate-token está aquí cubierto
                                 "/api/pagos/ipn", "/api/pagos/notificacion",
                                 "/error", "/error-404"
                         ).permitAll()
@@ -94,7 +95,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
                         .requestMatchers("/api/reservas/crear").authenticated()
-                        .requestMatchers("/api/reservas/usuario").authenticated()
+                        .requestMatchers("/api/reservas/usuario").authenticated() // Permitir a usuarios autenticados ver sus reservas
 
                         // Rutas de Reservas para Admin o Propietario (o ambas, el servicio filtra)
                         .requestMatchers("/api/reservas/admin/todas").hasAnyRole("ADMIN", "COMPLEX_OWNER")
@@ -104,16 +105,17 @@ public class SecurityConfig {
                         .requestMatchers("/api/reservas/{id}/marcar-pagada").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}/equipos").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers(HttpMethod.DELETE, "/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER")
-                        .requestMatchers(HttpMethod.GET, "/api/reservas/complejo/**").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Este es el endpoint complejoId/tipoCancha
+                        .requestMatchers(HttpMethod.GET, "/api/reservas/complejo/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
                         .requestMatchers("/api/pagos/crear-preferencia/**").authenticated()
 
                         .requestMatchers("/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN") // Solo ADMIN puede listar todos los usuarios
+                        .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN")
 
-                        .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER") // Mantenemos esta
+                        // CORREGIDO: Mapeo correcto para /api/estadisticas/admin
+                        .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
                         .anyRequest().authenticated()
                 )
@@ -165,7 +167,7 @@ public class SecurityConfig {
                         .filter(a -> a.startsWith("ROLE_"))
                         .map(a -> a.substring(5))
                         .findFirst()
-                        .orElse("USER"); // Si no tiene un rol específico, default a USER
+                        .orElse("USER");
 
                 if (email == null || email.isBlank()) {
                     log.error("OAuth2 user email is null or blank");
@@ -174,12 +176,12 @@ public class SecurityConfig {
                 }
 
                 try {
-                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role); // Asegura que 'role' aquí es String
+                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
                     targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
                     targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
-                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8); // Pasa el rol como string
+                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);

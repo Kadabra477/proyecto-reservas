@@ -186,12 +186,9 @@ public class UsuarioServicio implements UserDetailsService {
         if (bio != null) {
             user.setBio(bio);
         }
-        // No se actualiza profilePictureUrl aquí
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
     }
-
-    // ¡Método 'updateProfilePictureUrl' ELIMINADO!
 
     @Transactional
     public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
@@ -243,14 +240,20 @@ public class UsuarioServicio implements UserDetailsService {
         return otherAdminsCount > 0;
     }
 
-    // Opcional: Si el usuario es eliminado, también deberías eliminar su foto de perfil de S3.
-    // Esto es solo un ejemplo de cómo podrías integrar la eliminación.
     @Transactional
     public void deleteUser(Long userId) {
         Optional<User> userOptional = usuarioRepositorio.findById(userId);
         if (userOptional.isPresent()) {
             User user = userOptional.get();
-            // ¡Lógica de eliminación de foto de perfil ELIMINADA!
+            // Lógica para eliminar la foto de perfil del usuario si aplica
+            // if (user.getProfilePictureUrl() != null && !user.getProfilePictureUrl().isEmpty()) {
+            //     try {
+            //         s3StorageService.deleteFile(user.getProfilePictureUrl());
+            //         log.info("Foto de perfil de usuario {} eliminada de S3.", user.getUsername());
+            //     } catch (Exception e) {
+            //         log.error("Error al eliminar foto de perfil de S3 para usuario {}: {}", user.getUsername(), e.getMessage());
+            //     }
+            // }
             usuarioRepositorio.delete(user);
             log.info("Usuario {} (ID {}) eliminado exitosamente.", user.getUsername(), userId);
         } else {

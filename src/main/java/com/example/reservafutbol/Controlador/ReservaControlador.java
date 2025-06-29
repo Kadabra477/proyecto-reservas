@@ -160,13 +160,7 @@ public class ReservaControlador {
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "El complejo seleccionado no existe.");
                 });
 
-        Optional<String> nombreCanchaAsignadaOpt = reservaServicio.generateAssignedCanchaName(dto.getComplejoId(), dto.getTipoCancha(), dto.getFecha(), dto.getHora());
-        if (nombreCanchaAsignadaOpt.isEmpty()) {
-            log.warn("No se pudo generar nombre de cancha asignada. Esto indica que no hay slots disponibles.");
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("No hay canchas disponibles para el tipo y horario seleccionado. Por favor, elige otro.");
-        }
-        String nombreCanchaAsignada = nombreCanchaAsignadaOpt.get();
-
+        // La asignación de nombre de cancha ahora se hace dentro de crearReserva con la nueva lógica.
         Double precioPorHora = complejo.getCanchaPrices().get(dto.getTipoCancha());
         if (precioPorHora == null) {
             log.error("Precio no configurado para el tipo de cancha '{}' en complejo ID: {}", dto.getTipoCancha(), complejo.getId());
@@ -178,7 +172,7 @@ public class ReservaControlador {
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setComplejo(complejo);
         nuevaReserva.setTipoCanchaReservada(dto.getTipoCancha());
-        nuevaReserva.setNombreCanchaAsignada(nombreCanchaAsignada);
+        // El nombre de la cancha asignada se establece DENTRO del servicio crearReserva
         nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
@@ -191,7 +185,7 @@ public class ReservaControlador {
         try {
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
             log.info("Reserva creada con ID: {} para complejo '{}' (tipo: '{}'), asignada a: '{}'",
-                    reservaGuardada.getId(), complejo.getNombre(), dto.getTipoCancha(), nombreCanchaAsignada);
+                    reservaGuardada.getId(), complejo.getNombre(), dto.getTipoCancha(), reservaGuardada.getNombreCanchaAsignada()); // Ahora el nombre se obtiene de la reserva guardada
             return ResponseEntity.status(HttpStatus.CREATED).body(new ReservaDetalleDTO(reservaGuardada));
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear reserva (validación de slot/cancha): {}", e.getMessage());

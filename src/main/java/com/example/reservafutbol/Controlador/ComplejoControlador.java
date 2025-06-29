@@ -8,14 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType; // Importar MediaType
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile; // Importar MultipartFile
+import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException; // Importar IOException
+import java.io.IOException;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
@@ -76,10 +76,10 @@ public class ComplejoControlador {
      * @return ResponseEntity con el complejo creado o un error.
      */
     @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE) // ¡CAMBIO CLAVE: Consumo de MultipartForm!
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> crearComplejo(
-            @RequestPart("complejo") CrearComplejoRequest request, // Datos JSON del complejo
-            @RequestPart(value = "photo", required = false) MultipartFile photoFile, // Archivo de la foto, opcional
+            @RequestPart("complejo") CrearComplejoRequest request,
+            @RequestPart(value = "photo", required = false) MultipartFile photoFile,
             Authentication authentication) {
         String adminUsername = authentication.getName();
         log.info("POST /api/complejos - Creando nuevo complejo '{}' para propietario '{}' por ADMIN: {}",
@@ -91,7 +91,7 @@ public class ComplejoControlador {
                     request.getDescripcion(),
                     request.getUbicacion(),
                     request.getTelefono(),
-                    photoFile, // ¡Pasamos el MultipartFile al servicio!
+                    photoFile,
                     request.getHorarioApertura(),
                     request.getHorarioCierre(),
                     request.getCanchaCounts(),
@@ -103,8 +103,8 @@ public class ComplejoControlador {
             return new ResponseEntity<>(nuevoComplejo, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear complejo: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage())); // Mensaje de error más descriptivo
-        } catch (IOException e) { // Capturar IOException por problemas de imagen
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
             log.error("Error de I/O al procesar la imagen para el complejo:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Error al procesar la imagen: " + e.getMessage()));
         } catch (Exception e) {
@@ -124,24 +124,24 @@ public class ComplejoControlador {
      * @return ResponseEntity con el complejo actualizado o un error.
      */
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
-    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE) // ¡CAMBIO CLAVE: Consumo de MultipartForm!
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> actualizarComplejo(
             @PathVariable Long id,
-            @RequestPart("complejo") Complejo complejoDetails, // ¡Datos JSON del complejo!
-            @RequestPart(value = "photo", required = false) MultipartFile photoFile, // Archivo de la foto, opcional
+            @RequestPart("complejo") Complejo complejoDetails,
+            @RequestPart(value = "photo", required = false) MultipartFile photoFile,
             Authentication authentication) {
         String username = authentication.getName();
         log.info("PUT /api/complejos/{} - Actualizando complejo: {} por usuario: {}", id, complejoDetails.getNombre(), username);
         try {
-            Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejoDetails, photoFile, username); // ¡Pasamos el MultipartFile al servicio!
+            Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejoDetails, photoFile, username);
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
             log.warn("Error al actualizar complejo {}: {}", id, e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage())); // Mensaje de error más descriptivo
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
         } catch (SecurityException e) {
             log.warn("Acceso denegado para actualizar complejo {}: {}", id, e.getMessage());
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage())); // Mensaje de error más descriptivo
-        } catch (IOException e) { // Capturar IOException por problemas de imagen
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
             log.error("Error de I/O al procesar la imagen para el complejo ID {}: {}", id, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Error al procesar la imagen: " + e.getMessage()));
         } catch (Exception e) {
