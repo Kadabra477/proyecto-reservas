@@ -56,7 +56,7 @@ public class User implements UserDetails {
 
     @Column(columnDefinition = "TEXT")
     private String bio;
-    private String profilePictureUrl;
+    // ¡Campo 'profilePictureUrl' ELIMINADO!
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles",
@@ -80,6 +80,7 @@ public class User implements UserDetails {
         this.password = password;
         this.nombreCompleto = nombreCompleto;
         this.enabled = false;
+        // No se setea profilePictureUrl aquí
     }
 
     @Override

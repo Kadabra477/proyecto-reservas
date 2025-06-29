@@ -12,12 +12,12 @@ import java.util.List;
 public class PerfilDTO {
 
     private String nombreCompleto; // Mantener por compatibilidad si es necesario
-    private String nombre;       // NUEVO: Campo para el nombre (primer nombre)
-    private String apellido;     // NUEVO: Campo para el apellido (resto del nombre completo)
+    private String nombre;       // Campo para el nombre (primer nombre)
+    private String apellido;     // Campo para el apellido (resto del nombre completo)
     private String ubicacion;
     private Integer edad;
     private String bio;
     private String email; // Se mapea desde el 'username' del User
-    private String profilePictureUrl;
-    private List<String> roles; // Lista de roles del usuario// NUEVO: Campo para el teléfono
+    // ¡Campo 'profilePictureUrl' ELIMINADO!
+    private List<String> roles; // Lista de roles del usuario
 }

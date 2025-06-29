@@ -39,6 +39,9 @@ public class UsuarioServicio implements UserDetailsService {
     @Autowired
     private RoleRepositorio roleRepositorio;
 
+    @Autowired
+    private S3StorageService s3StorageService; // Necesario para eliminar la foto de perfil si se borra el usuario
+
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
@@ -84,6 +87,7 @@ public class UsuarioServicio implements UserDetailsService {
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
+        // No se setea profilePictureUrl aquí
 
         Set<Role> roles = new HashSet<>();
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
@@ -182,19 +186,12 @@ public class UsuarioServicio implements UserDetailsService {
         if (bio != null) {
             user.setBio(bio);
         }
+        // No se actualiza profilePictureUrl aquí
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
     }
 
-    @Transactional
-    public void updateProfilePictureUrl(User user, String url) {
-        log.info("Actualizando foto de perfil para usuario: {}", user.getUsername());
-
-        user.setProfilePictureUrl(url);
-        usuarioRepositorio.save(user);
-
-        log.info("Foto de perfil actualizada para usuario: {}", user.getUsername());
-    }
+    // ¡Método 'updateProfilePictureUrl' ELIMINADO!
 
     @Transactional
     public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
@@ -210,27 +207,22 @@ public class UsuarioServicio implements UserDetailsService {
             throw new IllegalArgumentException("Un usuario no puede tener los roles ADMIN y COMPLEX_OWNER a la vez.");
         }
 
-        // Si se seleccionó ADMIN, aseguramos que también tenga USER
         if (hasAdmin) {
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_ADMIN)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'ADMIN' no encontrado.")));
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
         }
-        // Si se seleccionó COMPLEX_OWNER (y no ADMIN), aseguramos que también tenga USER
         else if (hasComplexOwner) {
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_COMPLEX_OWNER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'COMPLEX_OWNER' no encontrado.")));
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
         }
-        // Si no se seleccionó ADMIN ni COMPLEX_OWNER, pero se seleccionó USER o ningún rol especial,
-        // aseguramos que tenga al menos el rol USER.
         else if (newRolesEnum.contains(ERole.ROLE_USER) || newRolesEnum.isEmpty()) {
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
         }
-
 
         user.setRoles(rolesToSet);
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
@@ -249,5 +241,20 @@ public class UsuarioServicio implements UserDetailsService {
                 .count();
 
         return otherAdminsCount > 0;
+    }
+
+    // Opcional: Si el usuario es eliminado, también deberías eliminar su foto de perfil de S3.
+    // Esto es solo un ejemplo de cómo podrías integrar la eliminación.
+    @Transactional
+    public void deleteUser(Long userId) {
+        Optional<User> userOptional = usuarioRepositorio.findById(userId);
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+            // ¡Lógica de eliminación de foto de perfil ELIMINADA!
+            usuarioRepositorio.delete(user);
+            log.info("Usuario {} (ID {}) eliminado exitosamente.", user.getUsername(), userId);
+        } else {
+            log.warn("Intento de eliminar usuario con ID {} fallido: No encontrado.", userId);
+        }
     }
 }
