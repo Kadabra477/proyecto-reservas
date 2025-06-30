@@ -81,19 +81,16 @@ public class ReservaControlador {
     }
 
 
-    // MODIFICADO: Este endpoint ya maneja el filtrado por rol en el servicio,
-    // y es el que debería usar el frontend para "Gestionar Reservas" tanto ADMIN como COMPLEX_OWNER.
-    @GetMapping("/admin/todas") // El nombre de la ruta sigue siendo "admin/todas"
+    @GetMapping("/admin/todas")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerTodas(Authentication authentication) {
         String username = authentication.getName();
         log.info("GET /api/reservas/admin/todas - Obteniendo todas las reservas (filtradas por rol si aplica) para: {}", username);
         try {
-            List<Reserva> reservas = reservaServicio.listarTodas(username); // Pasa el username al servicio
+            List<Reserva> reservas = reservaServicio.listarTodas(username);
             List<ReservaDetalleDTO> reservasDTO = reservas.stream()
                     .map(ReservaDetalleDTO::new)
                     .collect(Collectors.toList());
-            // Si la lista está vacía, devuelve 200 OK con un array vacío [], que es lo esperado por el frontend.
             return ResponseEntity.ok(reservasDTO);
         } catch (UsernameNotFoundException e) {
             log.error("Usuario no encontrado al listar todas las reservas: {}", username);
@@ -160,7 +157,6 @@ public class ReservaControlador {
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "El complejo seleccionado no existe.");
                 });
 
-        // La asignación de nombre de cancha ahora se hace dentro de crearReserva con la nueva lógica.
         Double precioPorHora = complejo.getCanchaPrices().get(dto.getTipoCancha());
         if (precioPorHora == null) {
             log.error("Precio no configurado para el tipo de cancha '{}' en complejo ID: {}", dto.getTipoCancha(), complejo.getId());
@@ -172,7 +168,6 @@ public class ReservaControlador {
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setComplejo(complejo);
         nuevaReserva.setTipoCanchaReservada(dto.getTipoCancha());
-        // El nombre de la cancha asignada se establece DENTRO del servicio crearReserva
         nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
@@ -185,7 +180,7 @@ public class ReservaControlador {
         try {
             Reserva reservaGuardada = reservaServicio.crearReserva(nuevaReserva);
             log.info("Reserva creada con ID: {} para complejo '{}' (tipo: '{}'), asignada a: '{}'",
-                    reservaGuardada.getId(), complejo.getNombre(), dto.getTipoCancha(), reservaGuardada.getNombreCanchaAsignada()); // Ahora el nombre se obtiene de la reserva guardada
+                    reservaGuardada.getId(), complejo.getNombre(), dto.getTipoCancha(), reservaGuardada.getNombreCanchaAsignada());
             return ResponseEntity.status(HttpStatus.CREATED).body(new ReservaDetalleDTO(reservaGuardada));
         } catch (IllegalArgumentException e) {
             log.warn("Error al crear reserva (validación de slot/cancha): {}", e.getMessage());
@@ -243,26 +238,6 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al marcar reserva como pagada.");
         }
     }
-
-    @PutMapping("/{id}/equipos")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
-    public ResponseEntity<ReservaDetalleDTO> generarEquipos(@PathVariable Long id, Authentication authentication) {
-        String username = authentication.getName();
-        log.info("PUT /api/reservas/{}/equipos por usuario: {}", id, username);
-        try {
-            Reserva reservaConEquipos = reservaServicio.generarEquipos(id, username);
-            return ResponseEntity.ok(new ReservaDetalleDTO(reservaConEquipos));
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        } catch (SecurityException e) {
-            log.warn("Acceso denegado para generar equipos reserva {}: {}", id, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
-        } catch (Exception e) {
-            log.error("Error al generar equipos para reserva {}: {}", id, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al generar equipos.");
-        }
-    }
-
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<Void> eliminar(@PathVariable Long id, Authentication authentication) {
