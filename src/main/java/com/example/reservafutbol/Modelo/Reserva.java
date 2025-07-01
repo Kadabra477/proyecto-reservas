@@ -29,17 +29,20 @@ public class Reserva {
     @JoinColumn(name = "usuario_id", nullable = false)
     private User usuario;
 
-    @Column(nullable = false)
+    @Column(name = "user_email", nullable = false)
     private String userEmail;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "complejo_id", referencedColumnName = "id", nullable = false)
     private Complejo complejo;
 
-    @Column(nullable = false)
+    @Column(name = "complejo_nombre") // Esto se usaba para desnormalizar, asegurar que se actualice
+    private String complejoNombre;
+
+    @Column(name = "tipo_cancha_reservada", nullable = false)
     private String tipoCanchaReservada;
 
-    @Column(nullable = true)
+    @Column(name = "nombre_cancha_asignada")
     private String nombreCanchaAsignada;
 
     private String cliente;
@@ -57,27 +60,36 @@ public class Reserva {
     private Boolean pagada;
 
     @Column(nullable = false)
-    private String estado = "pendiente"; // Estados
+    private String estado = "pendiente";
 
     private String metodoPago;
     private LocalDateTime fechaPago;
     private String mercadoPagoPaymentId;
 
-
-    @PreUpdate
     @PrePersist
-    public void actualizarEstadoGeneral() {
+    @PreUpdate
+    public void updateComplejoNombreAndEstado() { // Renombrado para ser más descriptivo
+        // Asegura que complejoNombre se guarde/actualice al persistir/actualizar la reserva
+        if (this.complejo != null) {
+            this.complejoNombre = this.complejo.getNombre();
+        }
+
+        // Lógica para actualizar el estado basada en 'pagada' y 'metodoPago'
+        // Prioridad: Pagada > Rechazada/Cancelada > Pendiente Efe > Pendiente MP > Pendiente General
         if (Boolean.TRUE.equals(this.pagada)) {
             this.estado = "pagada";
+        } else if ("rechazada_pago_mp".equalsIgnoreCase(this.estado)) {
+            // Mantener estado de rechazada_pago_mp si ya está así
+            this.estado = "rechazada_pago_mp";
+        } else if ("cancelada".equalsIgnoreCase(this.estado)) {
+            // Mantener estado de cancelada si ya está así
+            this.estado = "cancelada";
         } else if ("efectivo".equalsIgnoreCase(this.metodoPago)) {
-            if (!"rechazada_pago_mp".equalsIgnoreCase(this.estado) && !"cancelada".equalsIgnoreCase(this.estado)) {
-                this.estado = "pendiente_pago_efectivo";
-            }
-        } else if ("mercadopago".equalsIgnoreCase(this.metodoPago) && !Boolean.TRUE.equals(this.pagada)) {
-            if (!"rechazada_pago_mp".equalsIgnoreCase(this.estado) && !"cancelada".equalsIgnoreCase(this.estado)) {
-                this.estado = "pendiente_pago_mp";
-            }
+            this.estado = "pendiente_pago_efectivo";
+        } else if ("mercadopago".equalsIgnoreCase(this.metodoPago)) {
+            this.estado = "pendiente_pago_mp";
         } else {
+            // Si no hay método de pago o es desconocido, o si el estado es null/vacío, se pone a 'pendiente'
             if (this.estado == null || this.estado.isBlank() || this.estado.equals("pendiente")) {
                 this.estado = "pendiente";
             }

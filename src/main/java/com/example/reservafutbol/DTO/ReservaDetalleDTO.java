@@ -4,10 +4,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import com.example.reservafutbol.Modelo.Reserva; // Importa la entidad Reserva
+import com.example.reservafutbol.Modelo.Reserva;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+
 
 @Data
 @NoArgsConstructor
@@ -16,16 +17,16 @@ public class ReservaDetalleDTO {
     private Long id;
     private String userEmail;
 
-    // --- CAMBIOS CLAVE: INFORMACIÓN DEL COMPLEJO EN LUGAR DE CANCHA ID ---
-    private Long complejoId; // ID del complejo al que pertenece la reserva
-    private String complejoNombre; // Nombre del complejo
-    private String complejoUbicacion; // Ubicación del complejo
+    // --- INFORMACIÓN DEL COMPLEJO ---
+    private Long complejoId;
+    private String complejoNombre;
+    private String complejoUbicacion;
 
-    private String tipoCanchaReservada; // Tipo de cancha que se reservó
-    private String nombreCanchaAsignada; // Nombre de la cancha asignada internamente por el sistema
+    private String tipoCanchaReservada;
+    private String nombreCanchaAsignada;
 
     private String cliente;
-    private String dni; // Añadido DNI al DTO
+    private String dni;
     private String telefono;
     private LocalDateTime fechaHora;
     private BigDecimal precioTotal;
@@ -48,10 +49,10 @@ public class ReservaDetalleDTO {
         this.nombreCanchaAsignada = reserva.getNombreCanchaAsignada();
 
         this.cliente = reserva.getCliente();
-        this.dni = reserva.getDni(); // Mapear el DNI
+        this.dni = reserva.getDni();
         this.telefono = reserva.getTelefono();
         this.fechaHora = reserva.getFechaHora();
-        this.precioTotal = reserva.getPrecio();
+        this.precioTotal = reserva.getPrecio(); // Asumo que el precio se mapea correctamente aquí
         this.pagada = reserva.getPagada();
         this.estado = reserva.getEstado();
         this.metodoPago = reserva.getMetodoPago();
