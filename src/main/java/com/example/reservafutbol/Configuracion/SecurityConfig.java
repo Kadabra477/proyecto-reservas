@@ -6,10 +6,12 @@ import com.example.reservafutbol.Servicio.UsuarioServicio;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired; // Importar Autowired
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -28,6 +30,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -42,9 +45,15 @@ public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
-    private final JWTUtil jwtUtil;
-    private final UsuarioServicio usuarioServicio;
-    private final PasswordEncoder passwordEncoder;
+    @Autowired
+    private JWTUtil jwtUtil;
+
+    @Autowired
+    private UsuarioServicio usuarioServicio;
+
+    // AÑADIDO: Inyectar PasswordEncoder como campo para romper la dependencia circular
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Value("${frontend.url}")
     private String frontendUrl;
@@ -52,11 +61,10 @@ public class SecurityConfig {
     @Value("${BACKEND_URL}")
     private String backendUrlBase;
 
-    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
+    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
         this.jwtUtil = jwtUtil;
         this.usuarioServicio = usuarioServicio;
-        this.passwordEncoder = passwordEncoder;
-        log.info("SecurityConfig initialized with JWTUtil, UsuarioServicio, and PasswordEncoder.");
+        log.info("SecurityConfig initialized with JWTUtil and UsuarioServicio.");
     }
 
     @Bean
@@ -148,10 +156,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
+    public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
         provider.setUserDetailsService(usuarioServicio);
-        provider.setPasswordEncoder(passwordEncoder);
+        provider.setPasswordEncoder(passwordEncoder()); // Ahora llama al método del bean
         log.info("DaoAuthenticationProvider configured.");
         return new ProviderManager(provider);
     }
@@ -180,24 +188,30 @@ public class SecurityConfig {
                         log.info("Usuario de Google ya existe: {}. Generando token.", email);
                     } else {
                         log.info("Usuario de Google no encontrado: {}. Registrando nuevo usuario.", email);
-                        user = new User(); // Usar constructor vacío para evitar validaciones de password
-                        user.setUsername(email);
-                        user.setNombreCompleto(nombreCompleto != null ? nombreCompleto : email);
-                        user.setPassword(passwordEncoder.encode("oauth2user_default_password")); // Contraseña por defecto no usada
+                        // CREACIÓN DEL USUARIO: Se asegura de que no haya nulos y se use el passwordEncoder
+                        user = new User(
+                                email,
+                                passwordEncoder.encode("oauth2user_default_password"),
+                                nombreCompleto != null ? nombreCompleto : email
+                        );
                         user.setEnabled(true);
-                        user.setCompletoPerfil(true); // Se asume que el perfil está completo con estos datos
-                        user = usuarioServicio.registerOAuth2User(user); // Usar un método de servicio específico
+                        user.setCompletoPerfil(true);
+                        user = usuarioServicio.registerOAuth2User(user);
+                        log.info("Nuevo usuario de Google registrado con éxito: {}", user.getUsername());
                     }
 
-                    // Después de buscar/crear, generamos el token con sus roles
-                    String token = jwtUtil.generateTokenFromUser(user);
-
-                    String mainRole = user.getAuthorities().stream()
+                    List<String> rolesList = user.getAuthorities().stream()
                             .map(GrantedAuthority::getAuthority)
-                            .filter(a -> a.startsWith("ROLE_"))
-                            .map(a -> a.substring(5))
-                            .findFirst()
-                            .orElse("USER");
+                            .collect(Collectors.toList());
+
+                    String mainRole = "USER";
+                    if (rolesList.contains(ERole.ROLE_ADMIN.name())) {
+                        mainRole = ERole.ROLE_ADMIN.name().replace("ROLE_", "");
+                    } else if (rolesList.contains(ERole.ROLE_COMPLEX_OWNER.name())) {
+                        mainRole = ERole.ROLE_COMPLEX_OWNER.name().replace("ROLE_", "");
+                    }
+
+                    String token = jwtUtil.generateTokenFromUser(user);
 
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
@@ -209,7 +223,7 @@ public class SecurityConfig {
                     response.sendRedirect(targetUrl);
                 } catch (Exception e) {
                     log.error("Error generating JWT or redirecting: {}", e.getMessage(), e);
-                    response.sendRedirect(frontendUrl + "/login?error=handler_exception");
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al procesar el inicio de sesión con Google.", e);
                 }
             } else {
                 log.warn("OAuth2 principal is not DefaultOAuth2User: {}", authentication.getPrincipal().getClass());
