@@ -51,9 +51,6 @@ public class SecurityConfig {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
     @Value("${frontend.url}")
     private String frontendUrl;
 
@@ -176,7 +173,7 @@ public class SecurityConfig {
             log.info("OAuth2 authentication success handler triggered.");
 
             // Inyectar dependencias manualmente en este contexto
-            PasswordEncoder localPasswordEncoder = passwordEncoder();
+            PasswordEncoder localPasswordEncoder = new BCryptPasswordEncoder();
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
