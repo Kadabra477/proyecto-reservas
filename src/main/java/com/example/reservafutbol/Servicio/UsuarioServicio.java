@@ -74,16 +74,10 @@ public class UsuarioServicio implements UserDetailsService {
     }
 
     @Transactional
-    public User save(User user) {
-        log.info("Guardando usuario: {}", user.getUsername());
-        return usuarioRepositorio.save(user);
-    }
-
-    // MODIFICADO: Este método ahora es un simple registro que no asume el password codificado.
-    @Transactional
     public User registerNewUser(User user) {
         user.setEnabled(false);
         user.setVerificationToken(null);
+
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
@@ -96,6 +90,7 @@ public class UsuarioServicio implements UserDetailsService {
 
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario '{}' registrado y guardado (PENDIENTE DE ACTIVACIÓN ADMIN).", savedUser.getUsername());
+
         return savedUser;
     }
 
@@ -103,9 +98,9 @@ public class UsuarioServicio implements UserDetailsService {
     // Este método es invocado desde SecurityConfig.
     @Transactional
     public User registerOAuth2User(User user) {
-        user.setEnabled(true); // Los usuarios de Google se activan automáticamente
+        user.setEnabled(true);
         user.setVerificationToken(null);
-        user.setCompletoPerfil(true); // Se asume que tienen un perfil "completo" para la app
+        user.setCompletoPerfil(true);
 
         Set<Role> roles = new HashSet<>();
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)

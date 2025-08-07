@@ -6,7 +6,7 @@ import com.example.reservafutbol.Servicio.UsuarioServicio;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired; // Importar Autowired
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,7 +51,6 @@ public class SecurityConfig {
     @Autowired
     private UsuarioServicio usuarioServicio;
 
-    // AÑADIDO: Inyectar PasswordEncoder como campo para romper la dependencia circular
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -131,7 +130,7 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class)
                 .oauth2Login(oauth2 -> oauth2
-                        .successHandler(oAuth2AuthenticationSuccessHandler())
+                        .successHandler(oAuth2AuthenticationSuccessHandler()) // CORREGIDO: se usa el bean directamente
                         .failureHandler((request, response, exception) -> {
                             log.error("OAuth2 authentication failure: {}", exception.getMessage());
                             response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
@@ -156,18 +155,28 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio) {
+    public AuthenticationManager authenticationManager(UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
         provider.setUserDetailsService(usuarioServicio);
-        provider.setPasswordEncoder(passwordEncoder()); // Ahora llama al método del bean
+        provider.setPasswordEncoder(passwordEncoder);
         log.info("DaoAuthenticationProvider configured.");
         return new ProviderManager(provider);
     }
 
     @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    // AÑADIDO: Método oAuth2AuthenticationSuccessHandler como bean
+    // Dependencias se inyectan automáticamente en el método
+    @Bean
     public AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler() {
         return (request, response, authentication) -> {
             log.info("OAuth2 authentication success handler triggered.");
+
+            // Inyectar dependencias manualmente en este contexto
+            PasswordEncoder localPasswordEncoder = passwordEncoder();
 
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
@@ -188,12 +197,10 @@ public class SecurityConfig {
                         log.info("Usuario de Google ya existe: {}. Generando token.", email);
                     } else {
                         log.info("Usuario de Google no encontrado: {}. Registrando nuevo usuario.", email);
-                        // CREACIÓN DEL USUARIO: Se asegura de que no haya nulos y se use el passwordEncoder
-                        user = new User(
-                                email,
-                                passwordEncoder.encode("oauth2user_default_password"),
-                                nombreCompleto != null ? nombreCompleto : email
-                        );
+                        user = new User();
+                        user.setUsername(email);
+                        user.setNombreCompleto(nombreCompleto != null ? nombreCompleto : email);
+                        user.setPassword(localPasswordEncoder.encode("oauth2user_default_password"));
                         user.setEnabled(true);
                         user.setCompletoPerfil(true);
                         user = usuarioServicio.registerOAuth2User(user);
@@ -230,10 +237,5 @@ public class SecurityConfig {
                 response.sendRedirect(frontendUrl + "/login?error=principal_invalido");
             }
         };
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 }
