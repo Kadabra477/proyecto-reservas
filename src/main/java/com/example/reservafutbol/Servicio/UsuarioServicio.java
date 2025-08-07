@@ -39,8 +39,8 @@ public class UsuarioServicio implements UserDetailsService {
     @Autowired
     private RoleRepositorio roleRepositorio;
 
-    @Autowired
-    private S3StorageService s3StorageService; // Necesario para eliminar la foto de perfil si se borra el usuario
+    @Autowired(required = false) // Hacerlo opcional por si no se usa S3
+    private S3StorageService s3StorageService;
 
     @Override
     @Transactional(readOnly = true)
@@ -87,7 +87,6 @@ public class UsuarioServicio implements UserDetailsService {
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
-        // No se setea profilePictureUrl aquí
 
         Set<Role> roles = new HashSet<>();
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
@@ -100,6 +99,26 @@ public class UsuarioServicio implements UserDetailsService {
 
         return savedUser;
     }
+
+    // NUEVO MÉTODO: Para registrar un usuario de OAuth2
+    @Transactional
+    public User registerOAuth2User(User user) {
+        user.setEnabled(true); // Activos por defecto
+        user.setVerificationToken(null);
+        user.setCompletoPerfil(true); // Se asume que los datos son suficientes
+
+        Set<Role> roles = new HashSet<>();
+        Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
+                .orElseThrow(() -> new RuntimeException("Error: Rol de usuario no encontrado."));
+        roles.add(userRole);
+        user.setRoles(roles);
+
+        User savedUser = usuarioRepositorio.save(user);
+        log.info("Usuario '{}' de OAuth2 registrado y activado.", savedUser.getUsername());
+
+        return savedUser;
+    }
+
 
     @Transactional
     public boolean activateUser(Long userId) {

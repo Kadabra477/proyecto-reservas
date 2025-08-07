@@ -3,6 +3,7 @@ package com.example.reservafutbol.Configuracion;
 import com.example.reservafutbol.Modelo.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -47,6 +48,7 @@ public class JWTUtil {
                 .compact();
     }
 
+    // MODIFICADO: Este método fue corregido en tu código
     public String generateTokenFromEmail(String email, String nombreCompleto, String role) {
         return Jwts.builder()
                 .setSubject(email)
@@ -54,6 +56,20 @@ public class JWTUtil {
                 .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
                 .claim("roles", Collections.singletonList("ROLE_" + role))
                 .claim("nombreCompleto", nombreCompleto)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    // NUEVO MÉTODO: Genera un token a partir de un objeto User
+    public String generateTokenFromUser(User user) {
+        return Jwts.builder()
+                .setSubject(user.getUsername())
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .claim("roles", user.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .collect(Collectors.toList()))
+                .claim("nombreCompleto", user.getNombreCompleto())
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
@@ -95,7 +111,6 @@ public class JWTUtil {
         return false;
     }
 
-    // ✅ Método auxiliar para evitar repetición y usar parser() de JJWT 0.12.5
     private Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())

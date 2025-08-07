@@ -1,5 +1,7 @@
 package com.example.reservafutbol.Configuracion;
 
+import com.example.reservafutbol.Modelo.ERole;
+import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Servicio.UsuarioServicio;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -30,6 +32,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Configuration
@@ -41,6 +44,7 @@ public class SecurityConfig {
 
     private final JWTUtil jwtUtil;
     private final UsuarioServicio usuarioServicio;
+    private final PasswordEncoder passwordEncoder;
 
     @Value("${frontend.url}")
     private String frontendUrl;
@@ -48,10 +52,11 @@ public class SecurityConfig {
     @Value("${BACKEND_URL}")
     private String backendUrlBase;
 
-    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio) {
+    public SecurityConfig(JWTUtil jwtUtil, UsuarioServicio usuarioServicio, PasswordEncoder passwordEncoder) {
         this.jwtUtil = jwtUtil;
         this.usuarioServicio = usuarioServicio;
-        log.info("SecurityConfig initialized with JWTUtil and UsuarioServicio.");
+        this.passwordEncoder = passwordEncoder;
+        log.info("SecurityConfig initialized with JWTUtil, UsuarioServicio, and PasswordEncoder.");
     }
 
     @Bean
@@ -64,7 +69,6 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                // CORREGIDO: Usar .sessionManagement() directamente y pasar la política.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handler -> handler.authenticationEntryPoint((request, response, authException) -> {
                     log.warn("Unauthorized access to '{}': {}", request.getRequestURI(), authException.getMessage());
@@ -81,7 +85,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/", "/index.html", "/static/**", "/favicon.ico", "/manifest.json",
                                 "/logo192.png", "/logo512.png",
-                                "/api/auth/**", "/oauth2/**", "/login/oauth2/code/google", // /api/auth/validate-token está aquí cubierto
+                                "/api/auth/**", "/oauth2/**", "/login/oauth2/code/google",
                                 "/api/pagos/ipn", "/api/pagos/notificacion",
                                 "/error", "/error-404"
                         ).permitAll()
@@ -95,9 +99,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/complejos/**").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
                         .requestMatchers("/api/reservas/crear").authenticated()
-                        .requestMatchers("/api/reservas/usuario").authenticated() // Permitir a usuarios autenticados ver sus reservas
+                        .requestMatchers("/api/reservas/usuario").authenticated()
 
-                        // Rutas de Reservas para Admin o Propietario (o ambas, el servicio filtra)
                         .requestMatchers("/api/reservas/admin/todas").hasAnyRole("ADMIN", "COMPLEX_OWNER")
                         .requestMatchers("/api/reservas/{id}").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER")
                         .requestMatchers("/api/reservas/{id}/pdf-comprobante").hasAnyRole("ADMIN", "COMPLEX_OWNER", "USER")
@@ -114,7 +117,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/users/me/profile-picture").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN")
 
-                        // CORREGIDO: Mapeo correcto para /api/estadisticas/admin
                         .requestMatchers("/api/estadisticas/admin").hasAnyRole("ADMIN", "COMPLEX_OWNER")
 
                         .anyRequest().authenticated()
@@ -162,12 +164,6 @@ public class SecurityConfig {
             if (authentication.getPrincipal() instanceof DefaultOAuth2User oauthUser) {
                 String email = oauthUser.getAttribute("email");
                 String nombreCompleto = oauthUser.getAttribute("name");
-                String role = authentication.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority)
-                        .filter(a -> a.startsWith("ROLE_"))
-                        .map(a -> a.substring(5))
-                        .findFirst()
-                        .orElse("USER");
 
                 if (email == null || email.isBlank()) {
                     log.error("OAuth2 user email is null or blank");
@@ -176,12 +172,38 @@ public class SecurityConfig {
                 }
 
                 try {
-                    String token = jwtUtil.generateTokenFromEmail(email, nombreCompleto, role);
+                    Optional<User> userOptional = usuarioServicio.findByUsername(email);
+                    User user;
+
+                    if (userOptional.isPresent()) {
+                        user = userOptional.get();
+                        log.info("Usuario de Google ya existe: {}. Generando token.", email);
+                    } else {
+                        log.info("Usuario de Google no encontrado: {}. Registrando nuevo usuario.", email);
+                        user = new User(); // Usar constructor vacío para evitar validaciones de password
+                        user.setUsername(email);
+                        user.setNombreCompleto(nombreCompleto != null ? nombreCompleto : email);
+                        user.setPassword(passwordEncoder.encode("oauth2user_default_password")); // Contraseña por defecto no usada
+                        user.setEnabled(true);
+                        user.setCompletoPerfil(true); // Se asume que el perfil está completo con estos datos
+                        user = usuarioServicio.registerOAuth2User(user); // Usar un método de servicio específico
+                    }
+
+                    // Después de buscar/crear, generamos el token con sus roles
+                    String token = jwtUtil.generateTokenFromUser(user);
+
+                    String mainRole = user.getAuthorities().stream()
+                            .map(GrantedAuthority::getAuthority)
+                            .filter(a -> a.startsWith("ROLE_"))
+                            .map(a -> a.substring(5))
+                            .findFirst()
+                            .orElse("USER");
+
                     String targetUrl = frontendUrl + "/oauth2/redirect?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
-                    targetUrl += "&name=" + URLEncoder.encode(nombreCompleto != null ? nombreCompleto : "", StandardCharsets.UTF_8);
-                    targetUrl += "&username=" + URLEncoder.encode(email, StandardCharsets.UTF_8);
-                    targetUrl += "&role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
+                    targetUrl += "&name=" + URLEncoder.encode(user.getNombreCompleto(), StandardCharsets.UTF_8);
+                    targetUrl += "&username=" + URLEncoder.encode(user.getUsername(), StandardCharsets.UTF_8);
+                    targetUrl += "&role=" + URLEncoder.encode(mainRole, StandardCharsets.UTF_8);
 
                     log.info("Redirecting OAuth2 user to frontend URL: {}", targetUrl);
                     response.sendRedirect(targetUrl);
