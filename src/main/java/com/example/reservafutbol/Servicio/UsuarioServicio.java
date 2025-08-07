@@ -39,7 +39,7 @@ public class UsuarioServicio implements UserDetailsService {
     @Autowired
     private RoleRepositorio roleRepositorio;
 
-    @Autowired(required = false) // Hacerlo opcional por si no se usa S3
+    @Autowired(required = false)
     private S3StorageService s3StorageService;
 
     @Override
@@ -79,11 +79,11 @@ public class UsuarioServicio implements UserDetailsService {
         return usuarioRepositorio.save(user);
     }
 
+    // MODIFICADO: Este método ahora es un simple registro que no asume el password codificado.
     @Transactional
     public User registerNewUser(User user) {
         user.setEnabled(false);
         user.setVerificationToken(null);
-
         if (user.getCompletoPerfil() == null) {
             user.setCompletoPerfil(false);
         }
@@ -96,16 +96,16 @@ public class UsuarioServicio implements UserDetailsService {
 
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario '{}' registrado y guardado (PENDIENTE DE ACTIVACIÓN ADMIN).", savedUser.getUsername());
-
         return savedUser;
     }
 
-    // NUEVO MÉTODO: Para registrar un usuario de OAuth2
+    // NUEVO MÉTODO: Registra un usuario de OAuth2 con las propiedades de Google.
+    // Este método es invocado desde SecurityConfig.
     @Transactional
     public User registerOAuth2User(User user) {
-        user.setEnabled(true); // Activos por defecto
+        user.setEnabled(true); // Los usuarios de Google se activan automáticamente
         user.setVerificationToken(null);
-        user.setCompletoPerfil(true); // Se asume que los datos son suficientes
+        user.setCompletoPerfil(true); // Se asume que tienen un perfil "completo" para la app
 
         Set<Role> roles = new HashSet<>();
         Role userRole = roleRepositorio.findByName(ERole.ROLE_USER)
@@ -115,10 +115,8 @@ public class UsuarioServicio implements UserDetailsService {
 
         User savedUser = usuarioRepositorio.save(user);
         log.info("Usuario '{}' de OAuth2 registrado y activado.", savedUser.getUsername());
-
         return savedUser;
     }
-
 
     @Transactional
     public boolean activateUser(Long userId) {
