@@ -106,11 +106,23 @@ public class UsuarioControlador {
         List<User> users = usuarioServicio.findAllUsers();
         return ResponseEntity.ok(users);
     }
-
+    // ACTIVAR CUENTA (Solo Admin)
+    @PutMapping("/admin/users/{userId}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> activateUser(@PathVariable Long userId) {
+        log.info("PUT /api/users/admin/users/{}/activate - Activando usuario.", userId);
+        boolean activated = usuarioServicio.activateUser(userId);
+        if (activated) {
+            return ResponseEntity.ok("Usuario " + userId + " activado exitosamente.");
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Usuario con ID " + userId + " no encontrado.");
+        }
+    }
     private Optional<User> obtenerUsuarioAutenticado(Authentication auth) {
         if (auth == null || !auth.isAuthenticated()) {
             return Optional.empty();
         }
         return usuarioServicio.findByUsername(auth.getName());
     }
+
 }
