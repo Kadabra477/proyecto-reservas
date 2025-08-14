@@ -331,4 +331,26 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al verificar disponibilidad.");
         }
     }
+    @GetMapping("/complejo/mis-reservas")
+    @PreAuthorize("hasRole('COMPLEX_OWNER')")
+    public ResponseEntity<List<ReservaDetalleDTO>> obtenerReservasDeMiComplejo(Authentication authentication) {
+        String username = authentication.getName();
+        log.info("GET /api/reservas/complejo/mis-reservas - Obteniendo reservas para el complejo del propietario: {}", username);
+        try {
+            List<Reserva> reservas = reservaServicio.listarReservasDelPropietario(username);
+            List<ReservaDetalleDTO> reservasDTO = reservas.stream()
+                    .map(ReservaDetalleDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(reservasDTO);
+        } catch (UsernameNotFoundException e) {
+            log.error("Propietario no encontrado al listar sus reservas: {}", username);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (SecurityException e) {
+            log.warn("Acceso denegado para obtener reservas del complejo del propietario {}: {}", username, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
+        } catch (Exception e) {
+            log.error("Error inesperado al obtener reservas del complejo para {}: {}", username, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al obtener reservas.");
+        }
+    }
 }

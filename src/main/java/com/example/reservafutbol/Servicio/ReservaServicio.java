@@ -466,4 +466,23 @@ public class ReservaServicio {
                 horariosPico
         );
     }
+    @Transactional(readOnly = true)
+    public List<Reserva> listarReservasDelPropietario(String username) {
+        log.info("Buscando complejos y reservas para propietario: {}", username);
+        User propietario = usuarioRepositorio.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("Propietario no encontrado: " + username));
+
+        List<Complejo> complejosDelPropietario = complejoRepositorio.findByPropietario(propietario);
+
+        if (complejosDelPropietario.isEmpty()) {
+            log.warn("El propietario {} no tiene complejos asignados.", username);
+            return Collections.emptyList();
+        }
+
+        List<Long> idsComplejos = complejosDelPropietario.stream()
+                .map(Complejo::getId)
+                .collect(Collectors.toList());
+
+        return reservaRepositorio.findByComplejoIdIn(idsComplejos);
+    }
 }
