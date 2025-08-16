@@ -173,13 +173,9 @@ public class ReservaServicio {
             throw new IllegalStateException("Error interno: El precio de la reserva no está definido.");
         }
 
-        if ("efectivo".equalsIgnoreCase(reserva.getMetodoPago())) {
-            reserva.setPagada(false);
-            reserva.setEstado("pendiente_pago_efectivo");
-        } else {
-            reserva.setPagada(false);
-            reserva.setEstado("pendiente_pago_mp");
-        }
+        // Se usa el @PrePersist/@PreUpdate en la entidad Reserva para manejar el estado.
+        // Aquí solo se asigna el método de pago, el estado se definirá automáticamente.
+        reserva.setPagada(false); // Por defecto, una nueva reserva no está pagada.
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
 
@@ -214,6 +210,7 @@ public class ReservaServicio {
         return reservaRepositorio.findById(id);
     }
 
+    // Método que solo confirma la reserva, sin cambiar el estado de pago.
     @Transactional
     public Reserva confirmarReserva(Long id, String confirmadorUsername) {
         log.info("Intentando confirmar reserva con ID: {} por usuario: {}", id, confirmadorUsername);
@@ -229,11 +226,12 @@ public class ReservaServicio {
             }
         }
 
-        if ("pendiente_pago_mp".equalsIgnoreCase(r.getEstado()) || "pendiente".equalsIgnoreCase(r.getEstado())) {
-            r.setEstado("confirmada");
-        } else if ("pendiente_pago_efectivo".equalsIgnoreCase(r.getEstado())) {
-            r.setEstado("confirmada");
+        // Verifica si la reserva no ha sido ya pagada o cancelada antes de confirmarla.
+        if (r.getPagada() || r.getEstado().equalsIgnoreCase("cancelada")) {
+            throw new IllegalStateException("La reserva ya está pagada o cancelada. No se puede confirmar.");
         }
+
+        r.setEstado("confirmada");
 
         Reserva reservaConfirmada = reservaRepositorio.save(r);
         log.info("Reserva con ID: {} confirmada exitosamente. Nuevo estado: {}", id, reservaConfirmada.getEstado());
@@ -314,9 +312,16 @@ public class ReservaServicio {
             }
         }
 
+        if (reserva.getPagada() || "pagada".equalsIgnoreCase(reserva.getEstado())) {
+            throw new IllegalStateException("La reserva ya ha sido marcada como pagada.");
+        }
+
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
+        reserva.setFechaPago(LocalDateTime.now()); // Establecer la fecha de pago
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
+        reserva.setEstado("pagada"); // **CAMBIO CLAVE: Establece el estado a 'pagada'**
+
         Reserva updatedReserva = reservaRepositorio.save(reserva);
         log.info("Reserva con ID {} marcada como pagada. Nuevo estado: {}", updatedReserva.getId(), updatedReserva.getEstado());
         return updatedReserva;

@@ -194,6 +194,7 @@ public class ReservaControlador {
         }
     }
 
+    // El endpoint de "confirmar" ahora solo cambia el estado a 'confirmada'.
     @PutMapping("/{id}/confirmar")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<ReservaDetalleDTO> confirmar(@PathVariable Long id, Authentication authentication) {
@@ -215,6 +216,7 @@ public class ReservaControlador {
         }
     }
 
+    // **NUEVO ENDPOINT** para marcar una reserva como pagada.
     @PutMapping("/{id}/marcar-pagada")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<ReservaDetalleDTO> marcarPagada(@PathVariable Long id,
@@ -238,6 +240,7 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al marcar reserva como pagada.");
         }
     }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<Void> eliminar(@PathVariable Long id, Authentication authentication) {
