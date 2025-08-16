@@ -1,4 +1,3 @@
-// backend/src/main/java/com/example/reservafutbol/payload/response/ComplejoResponseDTO.java
 package com.example.reservafutbol.payload.response;
 
 import lombok.Data;
@@ -6,6 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import java.time.LocalTime;
+import java.util.List; // Importamos java.util.List
 import java.util.Map;
 
 @Data
@@ -17,7 +17,7 @@ public class ComplejoResponseDTO {
     private String descripcion;
     private String ubicacion;
     private String telefono;
-    private String fotoUrl;
+    private List<String> fotoUrls; // Modificado: Ahora es una lista
     private LocalTime horarioApertura;
     private LocalTime horarioCierre;
     private Map<String, Integer> canchaCounts;
@@ -34,7 +34,7 @@ public class ComplejoResponseDTO {
         this.descripcion = complejo.getDescripcion();
         this.ubicacion = complejo.getUbicacion();
         this.telefono = complejo.getTelefono();
-        this.fotoUrl = complejo.getFotoUrl();
+        this.fotoUrls = complejo.getFotoUrls(); // Modificado: Llamamos al nuevo método
         this.horarioApertura = complejo.getHorarioApertura();
         this.horarioCierre = complejo.getHorarioCierre();
         this.canchaCounts = complejo.getCanchaCounts();
