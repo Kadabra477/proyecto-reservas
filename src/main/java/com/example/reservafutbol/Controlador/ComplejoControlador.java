@@ -14,7 +14,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.time.LocalTime;
 import java.util.List;
@@ -68,10 +67,10 @@ public class ComplejoControlador {
 
     /**
      * Endpoint para crear un nuevo complejo.
-     * Ahora acepta un archivo de imagen (opcional) y los datos del complejo como partes separadas.
+     * Ahora acepta un array de archivos de imagen (opcional) y los datos del complejo como partes separadas.
      *
      * @param request Datos del complejo (JSON).
-     * @param photoFile Archivo de imagen (opcional).
+     * @param photoFiles Array de archivos de imagen (opcional).
      * @param authentication Información de autenticación del usuario.
      * @return ResponseEntity con el complejo creado o un error.
      */
@@ -79,7 +78,7 @@ public class ComplejoControlador {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> crearComplejo(
             @RequestPart("complejo") CrearComplejoRequest request,
-            @RequestPart(value = "photo", required = false) MultipartFile photoFile,
+            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles, // **MODIFICADO**
             Authentication authentication) {
         String adminUsername = authentication.getName();
         log.info("POST /api/complejos - Creando nuevo complejo '{}' para propietario '{}' por ADMIN: {}",
@@ -91,7 +90,7 @@ public class ComplejoControlador {
                     request.getDescripcion(),
                     request.getUbicacion(),
                     request.getTelefono(),
-                    photoFile,
+                    photoFiles, // **MODIFICADO**
                     request.getHorarioApertura(),
                     request.getHorarioCierre(),
                     request.getCanchaCounts(),
@@ -115,11 +114,11 @@ public class ComplejoControlador {
 
     /**
      * Endpoint para actualizar un complejo existente.
-     * Ahora acepta un archivo de imagen (opcional) y los datos del complejo como partes separadas.
+     * Ahora acepta un array de archivos de imagen (opcional) y los datos del complejo como partes separadas.
      *
      * @param id ID del complejo a actualizar.
      * @param complejoDetails Datos actualizados del complejo (JSON).
-     * @param photoFile Archivo de imagen (opcional) para actualizar la foto del complejo.
+     * @param photoFiles Array de archivos de imagen (opcional) para actualizar la foto del complejo.
      * @param authentication Información de autenticación del usuario.
      * @return ResponseEntity con el complejo actualizado o un error.
      */
@@ -128,12 +127,12 @@ public class ComplejoControlador {
     public ResponseEntity<?> actualizarComplejo(
             @PathVariable Long id,
             @RequestPart("complejo") Complejo complejoDetails,
-            @RequestPart(value = "photo", required = false) MultipartFile photoFile,
+            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles, // **MODIFICADO**
             Authentication authentication) {
         String username = authentication.getName();
         log.info("PUT /api/complejos/{} - Actualizando complejo: {} por usuario: {}", id, complejoDetails.getNombre(), username);
         try {
-            Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejoDetails, photoFile, username);
+            Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejoDetails, photoFiles, username);
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
             log.warn("Error al actualizar complejo {}: {}", id, e.getMessage());

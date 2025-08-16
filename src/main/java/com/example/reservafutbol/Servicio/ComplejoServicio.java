@@ -11,16 +11,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile; // Importado para manejar archivos
-
+import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.io.IOException; // Importado para manejar excepciones de I/O
+import java.io.IOException;
 
 @Service
 public class ComplejoServicio {
@@ -34,7 +34,7 @@ public class ComplejoServicio {
     private UsuarioServicio usuarioServicio;
 
     @Autowired
-    private S3StorageService s3StorageService; // ¡Inyectamos el nuevo servicio S3!
+    private S3StorageService s3StorageService;
 
     // No necesitas RoleRepositorio aquí si no lo usas directamente
 
@@ -69,7 +69,7 @@ public class ComplejoServicio {
      * @param descripcion Descripción.
      * @param ubicacion Ubicación.
      * @param telefono Teléfono.
-     * @param photoFile Archivo de foto (MultipartFile) opcional.
+     * @param photoFiles Array de archivos de imagen (MultipartFile[]) opcional.
      * @param horarioApertura Horario de apertura.
      * @param horarioCierre Horario de cierre.
      * @param canchaCounts Map de cantidades de canchas.
@@ -84,13 +84,13 @@ public class ComplejoServicio {
     @Transactional
     public Complejo crearComplejoParaAdmin(String nombreComplejo, String propietarioUsername,
                                            String descripcion, String ubicacion, String telefono,
-                                           MultipartFile photoFile, // ¡CAMBIO AQUÍ! Ahora acepta un MultipartFile
+                                           MultipartFile[] photoFiles, // ¡MODIFICADO!: Ahora es un array
                                            LocalTime horarioApertura, LocalTime horarioCierre,
                                            Map<String, Integer> canchaCounts,
                                            Map<String, Double> canchaPrices,
                                            Map<String, String> canchaSurfaces,
                                            Map<String, Boolean> canchaIluminacion,
-                                           Map<String, Boolean> canchaTecho) throws IOException { // ¡CAMBIO AQUÍ! Puede lanzar IOException
+                                           Map<String, Boolean> canchaTecho) throws IOException {
         log.info("ADMIN creando complejo '{}' para propietario '{}'", nombreComplejo, propietarioUsername);
 
         if (nombreComplejo == null || nombreComplejo.isBlank()) {
@@ -107,7 +107,7 @@ public class ComplejoServicio {
         desiredRoles.add(ERole.ROLE_USER);
         desiredRoles.add(ERole.ROLE_COMPLEX_OWNER);
 
-        usuarioServicio.updateUserRoles(propietario.getId(), desiredRoles); // Asegura que el propietario tenga los roles correctos
+        usuarioServicio.updateUserRoles(propietario.getId(), desiredRoles);
 
         Complejo nuevoComplejo = new Complejo();
         nuevoComplejo.setNombre(nombreComplejo);
@@ -117,12 +117,18 @@ public class ComplejoServicio {
         nuevoComplejo.setUbicacion(ubicacion);
         nuevoComplejo.setTelefono(telefono);
 
-        // ¡CAMBIO CLAVE AQUÍ! Subir y procesar la imagen si existe
-        if (photoFile != null && !photoFile.isEmpty()) {
-            String photoUrl = s3StorageService.uploadComplexImage(photoFile);
-            nuevoComplejo.setFotoUrl(photoUrl);
-        } else {
-            nuevoComplejo.setFotoUrl(null); // O podrías poner una URL por defecto
+        // ¡MODIFICACIÓN CLAVE AQUÍ! Iterar sobre el array de archivos
+        if (photoFiles != null && photoFiles.length > 0) {
+            List<String> uploadedUrls = new ArrayList<>();
+            for (MultipartFile file : photoFiles) {
+                if (!file.isEmpty()) {
+                    String photoUrl = s3StorageService.uploadComplexImage(file);
+                    uploadedUrls.add(photoUrl);
+                }
+            }
+            if (!uploadedUrls.isEmpty()) {
+                nuevoComplejo.setFotoUrls(uploadedUrls);
+            }
         }
 
         nuevoComplejo.setHorarioApertura(horarioApertura != null ? horarioApertura : LocalTime.of(8, 0));
@@ -139,13 +145,13 @@ public class ComplejoServicio {
 
     @Transactional(readOnly = true)
     public List<Complejo> listarTodosLosComplejos() {
-        log.info("Listando todos los complejos (con propietario EAGER).");
+        log.info("Listando todos los complejos.");
         return complejoRepositorio.findAll();
     }
 
     @Transactional(readOnly = true)
     public List<Complejo> listarComplejosPorPropietario(String propietarioUsername) {
-        log.info("Listando complejos para propietario: {} (con propietario EAGER).", propietarioUsername);
+        log.info("Listando complejos para propietario: {}.", propietarioUsername);
         User propietario = usuarioServicio.findByUsername(propietarioUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Propietario no encontrado con username: " + propietarioUsername));
         return complejoRepositorio.findByPropietario(propietario);
@@ -168,7 +174,7 @@ public class ComplejoServicio {
      *
      * @param id ID del complejo a actualizar.
      * @param complejoDetails Detalles del complejo (sin la URL de la foto).
-     * @param photoFile Archivo de foto (MultipartFile) opcional para actualizar.
+     * @param photoFiles Array de archivos de imagen (MultipartFile[]) opcional para actualizar.
      * @param editorUsername Nombre de usuario de quien edita.
      * @return El complejo actualizado.
      * @throws IllegalArgumentException si el complejo no existe o los datos son inválidos.
@@ -176,7 +182,7 @@ public class ComplejoServicio {
      * @throws IOException si hay un error al procesar/subir la imagen.
      */
     @Transactional
-    public Complejo actualizarComplejo(Long id, Complejo complejoDetails, MultipartFile photoFile, String editorUsername) throws IOException { // ¡CAMBIO AQUÍ! Acepta MultipartFile y lanza IOException
+    public Complejo actualizarComplejo(Long id, Complejo complejoDetails, MultipartFile[] photoFiles, String editorUsername) throws IOException { // ¡MODIFICADO!: Ahora es un array
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
         Complejo complejoExistente = complejoRepositorio.findById(id)
@@ -197,23 +203,32 @@ public class ComplejoServicio {
         complejoExistente.setUbicacion(complejoDetails.getUbicacion());
         complejoExistente.setTelefono(complejoDetails.getTelefono());
 
-        // ¡CAMBIO CLAVE AQUÍ! Subir y procesar nueva imagen si se proporciona
-        if (photoFile != null && !photoFile.isEmpty()) {
-            // Opcional: Eliminar la foto antigua de S3 si existe
-            if (complejoExistente.getFotoUrl() != null && !complejoExistente.getFotoUrl().isBlank()) {
-                s3StorageService.deleteFile(complejoExistente.getFotoUrl());
+        // **MODIFICACIÓN CLAVE**: Manejo de la actualización de imágenes.
+        // Si hay nuevos archivos, se borran los viejos y se suben los nuevos.
+        if (photoFiles != null && photoFiles.length > 0 && !photoFiles[0].isEmpty()) {
+            // Eliminar fotos antiguas
+            if (complejoExistente.getFotoUrls() != null) {
+                for (String oldUrl : complejoExistente.getFotoUrls()) {
+                    s3StorageService.deleteFile(oldUrl);
+                }
             }
-            String newPhotoUrl = s3StorageService.uploadComplexImage(photoFile);
-            complejoExistente.setFotoUrl(newPhotoUrl);
-        } else if (complejoDetails.getFotoUrl() != null && complejoDetails.getFotoUrl().isEmpty()) {
-            // Si el frontend envía fotoUrl vacía explícitamente, significa que la quieren quitar
-            if (complejoExistente.getFotoUrl() != null && !complejoExistente.getFotoUrl().isBlank()) {
-                s3StorageService.deleteFile(complejoExistente.getFotoUrl());
+            // Subir las nuevas fotos
+            List<String> newUrls = new ArrayList<>();
+            for (MultipartFile newFile : photoFiles) {
+                newUrls.add(s3StorageService.uploadComplexImage(newFile));
             }
-            complejoExistente.setFotoUrl(null);
+            complejoExistente.setFotoUrls(newUrls);
+        } else if (complejoDetails.getFotoUrls() != null && complejoDetails.getFotoUrls().isEmpty()) {
+            // Si el frontend envía una lista vacía, es una señal para eliminar todas las fotos.
+            if (complejoExistente.getFotoUrls() != null) {
+                for (String oldUrl : complejoExistente.getFotoUrls()) {
+                    s3StorageService.deleteFile(oldUrl);
+                }
+            }
+            complejoExistente.getFotoUrls().clear();
         }
-        // Si photoFile es nulo/vacío Y complejoDetails.getFotoUrl() no es nulo/vacío,
-        // significa que no se cambió la foto, y se mantiene la existente.
+        // Si `photoFiles` es nulo/vacío y `complejoDetails.getFotoUrls()` no es vacío,
+        // significa que no se cambió nada y se mantiene el estado de la lista existente.
 
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
@@ -244,12 +259,14 @@ public class ComplejoServicio {
             throw new SecurityException("Acceso denegado: No tienes permisos para eliminar este complejo.");
         }
 
-        // ¡Opcional: Eliminar la foto de S3 al eliminar el complejo!
-        if (complejoExistente.getFotoUrl() != null && !complejoExistente.getFotoUrl().isBlank()) {
+        // Eliminar todas las fotos de S3 al eliminar el complejo
+        if (complejoExistente.getFotoUrls() != null && !complejoExistente.getFotoUrls().isEmpty()) {
             try {
-                s3StorageService.deleteFile(complejoExistente.getFotoUrl());
+                for (String url : complejoExistente.getFotoUrls()) {
+                    s3StorageService.deleteFile(url);
+                }
             } catch (Exception e) {
-                log.error("Error al intentar eliminar la foto de S3 para el complejo ID {}: {}", id, e.getMessage());
+                log.error("Error al intentar eliminar las fotos de S3 para el complejo ID {}: {}", id, e.getMessage());
                 // No lanzar la excepción para no impedir la eliminación del complejo en la BD
             }
         }

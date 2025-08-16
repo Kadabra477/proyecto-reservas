@@ -7,7 +7,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Entity
@@ -25,16 +27,21 @@ public class Complejo {
     private String descripcion;
     private String ubicacion;
     private String telefono;
-    private String fotoUrl;
+
+    // **MODIFICACIÓN CLAVE**: Cambiamos de una sola URL a una lista de URLs.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "complejo_fotos", joinColumns = @JoinColumn(name = "complejo_id"))
+    @Column(name = "foto_url")
+    private List<String> fotoUrls = new ArrayList<>();
 
     @Column(nullable = false)
     private LocalTime horarioApertura;
     @Column(nullable = false)
     private LocalTime horarioCierre;
 
-    @ManyToOne(fetch = FetchType.EAGER) // ¡Ya está en EAGER!
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "propietario_id")
-    private User propietario; // ¡Sin @JsonIgnore aquí!
+    private User propietario;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "complejo_cancha_counts", joinColumns = @JoinColumn(name = "complejo_id"))
