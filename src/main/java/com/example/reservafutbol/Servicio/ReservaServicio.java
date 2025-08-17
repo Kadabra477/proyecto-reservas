@@ -490,4 +490,54 @@ public class ReservaServicio {
 
         return reservaRepositorio.findByComplejoIdIn(idsComplejos);
     }
+    @Transactional
+    public Reserva cancelarReserva(Long id, String canceladorUsername) {
+        log.info("Intentando cancelar reserva con ID: {} por usuario: {}", id, canceladorUsername);
+        Reserva reserva = reservaRepositorio.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Reserva no encontrada con ID: " + id));
+
+        User cancelador = usuarioRepositorio.findByUsername(canceladorUsername)
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + canceladorUsername));
+
+        // Lógica de validación de permisos
+        boolean tienePermiso = cancelador.getRoles().stream().anyMatch(role -> role.getName().equals(ERole.ROLE_ADMIN));
+        if (!tienePermiso) {
+            tienePermiso = reserva.getUsuario() != null && reserva.getUsuario().getId().equals(cancelador.getId());
+        }
+        if (!tienePermiso) {
+            Complejo complejo = reserva.getComplejo();
+            if (complejo != null && complejo.getPropietario() != null) {
+                tienePermiso = complejo.getPropietario().getId().equals(cancelador.getId());
+            }
+        }
+
+        if (!tienePermiso) {
+            throw new SecurityException("Acceso denegado: No tienes permisos para cancelar esta reserva.");
+        }
+
+        if ("cancelada".equalsIgnoreCase(reserva.getEstado())) {
+            throw new IllegalStateException("La reserva ya ha sido cancelada.");
+        }
+
+        // La fecha de cancelación debe ser antes de la fecha y hora de la reserva
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isAfter(reserva.getFechaHora())) {
+            throw new IllegalStateException("No se puede cancelar una reserva que ya ha comenzado o pasado.");
+        }
+
+        // Si la reserva está pagada, el reembolso puede requerir lógica adicional
+        if (reserva.getPagada()) {
+            // Aquí iría la lógica de reembolso si fuera necesario.
+            // Por ahora, solo se cambia el estado.
+            log.warn("La reserva ID {} está pagada. Se cancela, pero no se procesa un reembolso automático.", id);
+        }
+
+        // Cambiar el estado a "cancelada"
+        reserva.setEstado("cancelada");
+        Reserva reservaCancelada = reservaRepositorio.save(reserva);
+
+        log.info("Reserva con ID {} cancelada exitosamente por {}.", id, canceladorUsername);
+
+        return reservaCancelada;
+    }
 }

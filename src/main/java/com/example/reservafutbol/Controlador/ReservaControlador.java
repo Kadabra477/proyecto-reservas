@@ -356,4 +356,24 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al obtener reservas.");
         }
     }
+    // Endpoint para cancelar una reserva (solo para el usuario que la creó o un ADMIN/COMPLEX_OWNER)
+    @PutMapping("/{id}/cancelar")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER', 'USER')")
+    public ResponseEntity<Void> cancelarReserva(@PathVariable Long id, Authentication authentication) {
+        String username = authentication.getName();
+        log.info("PUT /api/reservas/{}/cancelar - Cancelando reserva por usuario: {}", id, username);
+        try {
+            reservaServicio.cancelarReserva(id, username);
+            return ResponseEntity.noContent().build(); // 204 No Content para indicar que la acción fue exitosa
+        } catch (IllegalArgumentException e) {
+            log.warn("Error al cancelar reserva {}: {}", id, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (SecurityException e) {
+            log.warn("Acceso denegado para cancelar reserva {} por usuario {}: {}", id, username, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
+        } catch (Exception e) {
+            log.error("Error inesperado al cancelar reserva {} para {}: {}", id, username, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al cancelar la reserva.");
+        }
+    }
 }
