@@ -28,11 +28,12 @@ public class Complejo {
     private String ubicacion;
     private String telefono;
 
-    // **MODIFICACIÓN CLAVE**: Cambiamos de una sola URL a una lista de URLs.
+    // **MODIFICACIÓN CLAVE**: Cambiamos de una lista a un mapa para almacenar URLs por resolución.
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "complejo_fotos", joinColumns = @JoinColumn(name = "complejo_id"))
+    @CollectionTable(name = "complejo_fotos_resoluciones", joinColumns = @JoinColumn(name = "complejo_id"))
+    @MapKeyColumn(name = "tipo_resolucion") // Clave: "thumbnail", "large", etc.
     @Column(name = "foto_url")
-    private List<String> fotoUrls = new ArrayList<>();
+    private Map<String, String> fotoUrlsPorResolucion = new HashMap<>(); // Nuevo campo
 
     @Column(nullable = false)
     private LocalTime horarioApertura;

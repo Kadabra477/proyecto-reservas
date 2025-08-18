@@ -3,7 +3,7 @@ package com.example.reservafutbol.Controlador;
 import com.example.reservafutbol.Modelo.Complejo;
 import com.example.reservafutbol.Servicio.ComplejoServicio;
 import com.example.reservafutbol.payload.request.CrearComplejoRequest;
-import com.example.reservafutbol.payload.response.ComplejoResponseDTO;
+import com.example.reservafutbol.payload.response.ComplejoResponseDTO; // Si usas DTOs para la respuesta
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,8 +37,10 @@ public class ComplejoControlador {
         if (complejos.isEmpty()) {
             return ResponseEntity.noContent().build();
         }
+        // Si ComplejoResponseDTO necesita ser actualizado para manejar el mapa de URLs, hazlo.
+        // Por ahora, asumo que ComplejoResponseDTO se construye a partir de Complejo.
         List<ComplejoResponseDTO> dtos = complejos.stream()
-                .map(ComplejoResponseDTO::new)
+                .map(ComplejoResponseDTO::new) // Asegúrate que ComplejoResponseDTO pueda manejar el nuevo campo de fotos
                 .collect(Collectors.toList());
         return ResponseEntity.ok(dtos);
     }
@@ -78,7 +80,7 @@ public class ComplejoControlador {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> crearComplejo(
             @RequestPart("complejo") CrearComplejoRequest request,
-            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles, // **MODIFICADO**
+            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles,
             Authentication authentication) {
         String adminUsername = authentication.getName();
         log.info("POST /api/complejos - Creando nuevo complejo '{}' para propietario '{}' por ADMIN: {}",
@@ -90,7 +92,7 @@ public class ComplejoControlador {
                     request.getDescripcion(),
                     request.getUbicacion(),
                     request.getTelefono(),
-                    photoFiles, // **MODIFICADO**
+                    photoFiles, // Pasar el array de archivos
                     request.getHorarioApertura(),
                     request.getHorarioCierre(),
                     request.getCanchaCounts(),
@@ -126,12 +128,13 @@ public class ComplejoControlador {
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> actualizarComplejo(
             @PathVariable Long id,
-            @RequestPart("complejo") Complejo complejoDetails,
-            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles, // **MODIFICADO**
+            @RequestPart("complejo") Complejo complejoDetails, // Complejo ahora tiene el mapa de URLs
+            @RequestPart(value = "photos", required = false) MultipartFile[] photoFiles,
             Authentication authentication) {
         String username = authentication.getName();
         log.info("PUT /api/complejos/{} - Actualizando complejo: {} por usuario: {}", id, complejoDetails.getNombre(), username);
         try {
+            // Asegúrate de que complejoDetails.getFotoUrlsPorResolucion() se pase correctamente si el frontend lo envía
             Complejo complejoActualizado = complejoServicio.actualizarComplejo(id, complejoDetails, photoFiles, username);
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);
         } catch (IllegalArgumentException e) {

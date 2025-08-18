@@ -2,10 +2,10 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Complejo;
 import com.example.reservafutbol.Modelo.ERole;
-import com.example.reservafutbol.Modelo.Role;
+import com.example.reservafutbol.Modelo.Role; // Asegúrate de que esta importación sea correcta si Role se usa en otro lugar
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
-import com.example.reservafutbol.Repositorio.RoleRepositorio;
+// import com.example.reservafutbol.Repositorio.RoleRepositorio; // No necesario si no se usa directamente
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,7 +84,7 @@ public class ComplejoServicio {
     @Transactional
     public Complejo crearComplejoParaAdmin(String nombreComplejo, String propietarioUsername,
                                            String descripcion, String ubicacion, String telefono,
-                                           MultipartFile[] photoFiles, // ¡MODIFICADO!: Ahora es un array
+                                           MultipartFile[] photoFiles,
                                            LocalTime horarioApertura, LocalTime horarioCierre,
                                            Map<String, Integer> canchaCounts,
                                            Map<String, Double> canchaPrices,
@@ -117,19 +117,18 @@ public class ComplejoServicio {
         nuevoComplejo.setUbicacion(ubicacion);
         nuevoComplejo.setTelefono(telefono);
 
-        // ¡MODIFICACIÓN CLAVE AQUÍ! Iterar sobre el array de archivos
-        if (photoFiles != null && photoFiles.length > 0) {
-            List<String> uploadedUrls = new ArrayList<>();
-            for (MultipartFile file : photoFiles) {
-                if (!file.isEmpty()) {
-                    String photoUrl = s3StorageService.uploadComplexImage(file);
-                    uploadedUrls.add(photoUrl);
-                }
-            }
-            if (!uploadedUrls.isEmpty()) {
-                nuevoComplejo.setFotoUrls(uploadedUrls);
-            }
+        // ¡MODIFICACIÓN CLAVE AQUÍ!
+        // Si hay archivos de fotos, procesarlos y guardar las URLs de las diferentes resoluciones
+        if (photoFiles != null && photoFiles.length > 0 && !photoFiles[0].isEmpty()) {
+            // Asumiendo que solo se sube una imagen principal para el complejo en este formulario
+            // Si quieres múltiples imágenes por complejo, la lógica sería más compleja aquí
+            Map<String, String> uploadedUrlsMap = s3StorageService.uploadComplexImageWithResolutions(photoFiles[0]);
+            nuevoComplejo.setFotoUrlsPorResolucion(uploadedUrlsMap); // Guardar el mapa de URLs
+        } else {
+            // Asegurarse de que el mapa no sea nulo si no se suben fotos
+            nuevoComplejo.setFotoUrlsPorResolucion(new HashMap<>());
         }
+
 
         nuevoComplejo.setHorarioApertura(horarioApertura != null ? horarioApertura : LocalTime.of(8, 0));
         nuevoComplejo.setHorarioCierre(horarioCierre != null ? horarioCierre : LocalTime.of(22, 0));
@@ -182,7 +181,7 @@ public class ComplejoServicio {
      * @throws IOException si hay un error al procesar/subir la imagen.
      */
     @Transactional
-    public Complejo actualizarComplejo(Long id, Complejo complejoDetails, MultipartFile[] photoFiles, String editorUsername) throws IOException { // ¡MODIFICADO!: Ahora es un array
+    public Complejo actualizarComplejo(Long id, Complejo complejoDetails, MultipartFile[] photoFiles, String editorUsername) throws IOException {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
         Complejo complejoExistente = complejoRepositorio.findById(id)
@@ -206,29 +205,26 @@ public class ComplejoServicio {
         // **MODIFICACIÓN CLAVE**: Manejo de la actualización de imágenes.
         // Si hay nuevos archivos, se borran los viejos y se suben los nuevos.
         if (photoFiles != null && photoFiles.length > 0 && !photoFiles[0].isEmpty()) {
-            // Eliminar fotos antiguas
-            if (complejoExistente.getFotoUrls() != null) {
-                for (String oldUrl : complejoExistente.getFotoUrls()) {
+            // Eliminar fotos antiguas (todas las resoluciones)
+            if (complejoExistente.getFotoUrlsPorResolucion() != null) {
+                for (String oldUrl : complejoExistente.getFotoUrlsPorResolucion().values()) {
                     s3StorageService.deleteFile(oldUrl);
                 }
             }
-            // Subir las nuevas fotos
-            List<String> newUrls = new ArrayList<>();
-            for (MultipartFile newFile : photoFiles) {
-                newUrls.add(s3StorageService.uploadComplexImage(newFile));
-            }
-            complejoExistente.setFotoUrls(newUrls);
-        } else if (complejoDetails.getFotoUrls() != null && complejoDetails.getFotoUrls().isEmpty()) {
-            // Si el frontend envía una lista vacía, es una señal para eliminar todas las fotos.
-            if (complejoExistente.getFotoUrls() != null) {
-                for (String oldUrl : complejoExistente.getFotoUrls()) {
+            // Subir las nuevas fotos y obtener todas las resoluciones
+            Map<String, String> newUrlsMap = s3StorageService.uploadComplexImageWithResolutions(photoFiles[0]);
+            complejoExistente.setFotoUrlsPorResolucion(newUrlsMap);
+        } else if (complejoDetails.getFotoUrlsPorResolucion() != null && complejoDetails.getFotoUrlsPorResolucion().isEmpty()) {
+            // Si el frontend envía un mapa vacío, es una señal para eliminar todas las fotos.
+            if (complejoExistente.getFotoUrlsPorResolucion() != null) {
+                for (String oldUrl : complejoExistente.getFotoUrlsPorResolucion().values()) {
                     s3StorageService.deleteFile(oldUrl);
                 }
             }
-            complejoExistente.getFotoUrls().clear();
+            complejoExistente.getFotoUrlsPorResolucion().clear();
         }
-        // Si `photoFiles` es nulo/vacío y `complejoDetails.getFotoUrls()` no es vacío,
-        // significa que no se cambió nada y se mantiene el estado de la lista existente.
+        // Si `photoFiles` es nulo/vacío y `complejoDetails.getFotoUrlsPorResolucion()` no es vacío,
+        // significa que no se cambió nada y se mantiene el estado del mapa existente.
 
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
@@ -260,9 +256,9 @@ public class ComplejoServicio {
         }
 
         // Eliminar todas las fotos de S3 al eliminar el complejo
-        if (complejoExistente.getFotoUrls() != null && !complejoExistente.getFotoUrls().isEmpty()) {
+        if (complejoExistente.getFotoUrlsPorResolucion() != null && !complejoExistente.getFotoUrlsPorResolucion().isEmpty()) {
             try {
-                for (String url : complejoExistente.getFotoUrls()) {
+                for (String url : complejoExistente.getFotoUrlsPorResolucion().values()) {
                     s3StorageService.deleteFile(url);
                 }
             } catch (Exception e) {
