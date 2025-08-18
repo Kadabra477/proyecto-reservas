@@ -14,7 +14,10 @@ import java.util.Map;
 
 @Entity
 @Table(name = "complejos")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class Complejo {
 
     @Id
@@ -28,15 +31,20 @@ public class Complejo {
     private String ubicacion;
     private String telefono;
 
-    // **MODIFICACIÓN CLAVE**: Cambiamos de una lista a un mapa para almacenar URLs por resolución.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "complejo_fotos", joinColumns = @JoinColumn(name = "complejo_id"))
+    @Column(name = "foto_url")
+    private List<String> fotoUrls = new ArrayList<>();
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "complejo_fotos_resoluciones", joinColumns = @JoinColumn(name = "complejo_id"))
-    @MapKeyColumn(name = "tipo_resolucion") // Clave: "thumbnail", "large", etc.
+    @MapKeyColumn(name = "tipo_resolucion")
     @Column(name = "foto_url")
-    private Map<String, String> fotoUrlsPorResolucion = new HashMap<>(); // Nuevo campo
+    private Map<String, String> fotoUrlsPorResolucion = new HashMap<>();
 
     @Column(nullable = false)
     private LocalTime horarioApertura;
+
     @Column(nullable = false)
     private LocalTime horarioCierre;
 
@@ -73,7 +81,6 @@ public class Complejo {
     @MapKeyColumn(name = "tipo_cancha")
     @Column(name = "techo")
     private Map<String, Boolean> canchaTecho = new HashMap<>();
-
 
     public Complejo(String nombre, String ubicacion, String telefono, LocalTime horarioApertura, LocalTime horarioCierre) {
         this.nombre = nombre;
