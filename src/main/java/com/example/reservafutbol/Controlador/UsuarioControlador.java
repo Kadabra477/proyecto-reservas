@@ -125,10 +125,17 @@ public class UsuarioControlador {
     public ResponseEntity<?> updateRoles(@PathVariable Long userId, @RequestBody List<String> roleNames) {
         log.info("PUT /api/users/{}/roles - Actualizando roles para el usuario.", userId);
         try {
-            usuarioServicio.updateUserRoles(userId, roleNames);
+            // Convertir la List<String> a un Set<ERole>
+            Set<ERole> desiredRoles = roleNames.stream()
+                    .map(ERole::valueOf)
+                    .collect(Collectors.toSet());
+
+            // Llamar al método del servicio con el tipo de dato correcto
+            usuarioServicio.updateUserRoles(userId, desiredRoles);
+
             return ResponseEntity.ok("Roles actualizados exitosamente.");
         } catch (IllegalArgumentException e) {
-            log.error("Error al actualizar roles:", e);
+            log.error("Error al actualizar roles: Rol inválido proporcionado", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         } catch (Exception e) {
             log.error("Error inesperado al actualizar roles:", e);
