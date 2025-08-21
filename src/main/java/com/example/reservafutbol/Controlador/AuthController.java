@@ -237,7 +237,6 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error interno al actualizar roles.");
         }
     }
-
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/admin/users/{userId}/activate")
     public ResponseEntity<?> activateUserByAdmin(@PathVariable Long userId) {

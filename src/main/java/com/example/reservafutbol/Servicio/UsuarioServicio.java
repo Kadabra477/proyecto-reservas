@@ -201,20 +201,17 @@ public class UsuarioServicio implements UserDetailsService {
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
     }
+
     @Transactional
-    public User updateUserRoles(Long userId, List<String> roleNames) {
+    public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
         User user = usuarioRepositorio.findById(userId)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con ID: " + userId));
-
-        // Convert the incoming List<String> of role names to a Set of ERole enums
-        Set<ERole> newRolesEnum = roleNames.stream()
-                .map(ERole::valueOf)
-                .collect(Collectors.toSet());
 
         Set<Role> rolesToSet = new HashSet<>();
 
         boolean hasAdmin = newRolesEnum.contains(ERole.ROLE_ADMIN);
         boolean hasComplexOwner = newRolesEnum.contains(ERole.ROLE_COMPLEX_OWNER);
+        boolean hasUser = newRolesEnum.contains(ERole.ROLE_USER);
 
         if (hasAdmin && hasComplexOwner) {
             throw new IllegalArgumentException("Un usuario no puede tener los roles ADMIN y COMPLEX_OWNER a la vez.");
@@ -232,15 +229,22 @@ public class UsuarioServicio implements UserDetailsService {
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
         }
-        else if (newRolesEnum.contains(ERole.ROLE_USER) || newRolesEnum.isEmpty()) {
+        else if (hasUser || newRolesEnum.isEmpty()) {
             rolesToSet.add(roleRepositorio.findByName(ERole.ROLE_USER)
                     .orElseThrow(() -> new RuntimeException("Error: Rol 'USER' no encontrado.")));
+        } else {
+            // Lógica para roles que no sean ADMIN, COMPLEX_OWNER o USER.
+            for (ERole roleName : newRolesEnum) {
+                rolesToSet.add(roleRepositorio.findByName(roleName)
+                        .orElseThrow(() -> new RuntimeException("Error: Rol '" + roleName.name() + "' no encontrado.")));
+            }
         }
 
         user.setRoles(rolesToSet);
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
         return usuarioRepositorio.save(user);
     }
+
     @Transactional(readOnly = true)
     public boolean existsOtherAdmin(Long currentAdminId) {
         log.debug("Verificando si existen otros administradores además de ID: {}", currentAdminId);
