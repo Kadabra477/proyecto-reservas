@@ -23,15 +23,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -122,6 +114,10 @@ public class ReservaServicio {
             log.error("Error: Reserva recibida sin tipo de cancha reservada.");
             throw new IllegalArgumentException("El tipo de cancha reservada es obligatorio.");
         }
+        if (reserva.getNombreCanchaAsignada() == null || reserva.getNombreCanchaAsignada().isBlank()) {
+            log.error("Error: Reserva recibida sin nombre de cancha asignada.");
+            throw new IllegalArgumentException("El nombre de la cancha asignada es obligatorio.");
+        }
 
         Complejo complejoAsignado = reserva.getComplejo();
 
@@ -134,54 +130,33 @@ public class ReservaServicio {
             throw new IllegalArgumentException("No se pueden crear reservas para fechas u horas pasadas.");
         }
 
-        List<Reserva> conflictosExistentes = reservaRepositorio.findConflictingReservationsForPool(
+        // Validación de cancha disponible basada en el nombre específico
+        List<Reserva> conflictosExistentes = reservaRepositorio.findConflictingReservationsForCancha(
                 complejoAsignado.getId(),
                 reserva.getTipoCanchaReservada(),
+                reserva.getNombreCanchaAsignada(),
                 reserva.getFechaHora(),
                 slotEndTime
         );
 
-        Integer totalCanchasDeEsteTipo = complejoAsignado.getCanchaCounts().getOrDefault(reserva.getTipoCanchaReservada(), 0);
-
-        if (conflictosExistentes.size() >= totalCanchasDeEsteTipo) {
-            log.warn("Conflicto: Todas las {} canchas de tipo '{}' en complejo '{}' ya están reservadas para el slot {}.",
-                    totalCanchasDeEsteTipo, reserva.getTipoCanchaReservada(), complejoAsignado.getNombre(), reserva.getFechaHora());
-            throw new IllegalArgumentException("No hay canchas disponibles para el tipo y horario seleccionado en este complejo. Por favor, elige otro.");
+        if (!conflictosExistentes.isEmpty()) {
+            log.warn("Conflicto: La cancha '{}' en complejo '{}' ya está reservada para el slot {}.",
+                    reserva.getNombreCanchaAsignada(), complejoAsignado.getNombre(), reserva.getFechaHora());
+            throw new IllegalArgumentException("La cancha '" + reserva.getNombreCanchaAsignada() + "' ya está reservada para el horario seleccionado.");
         }
-
-        Set<String> nombresCanchasOcupadasEnSlot = conflictosExistentes.stream()
-                .map(Reserva::getNombreCanchaAsignada)
-                .collect(Collectors.toSet());
-
-        String nombreCanchaAsignada = null;
-        for (int i = 1; i <= totalCanchasDeEsteTipo; i++) {
-            String posibleNombre = reserva.getTipoCanchaReservada() + " - Instancia " + i;
-            if (!nombresCanchasOcupadasEnSlot.contains(posibleNombre)) {
-                nombreCanchaAsignada = posibleNombre;
-                break;
-            }
-        }
-
-        if (nombreCanchaAsignada == null) {
-            log.error("Error lógico: Se intentó crear una reserva pero no se pudo asignar una instancia de cancha a pesar de que el conteo de disponibilidad indicó que había.");
-            throw new IllegalStateException("No se pudo asignar una cancha disponible. Intenta nuevamente.");
-        }
-        reserva.setNombreCanchaAsignada(nombreCanchaAsignada);
 
         if (reserva.getPrecio() == null || reserva.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
             log.error("El precio de la reserva es nulo o inválido al intentar guardar.");
             throw new IllegalStateException("Error interno: El precio de la reserva no está definido.");
         }
 
-        // Se usa el @PrePersist/@PreUpdate en la entidad Reserva para manejar el estado.
-        // Aquí solo se asigna el método de pago, el estado se definirá automáticamente.
-        reserva.setPagada(false); // Por defecto, una nueva reserva no está pagada.
+        reserva.setPagada(false);
         reserva.setFechaPago(null);
         reserva.setMercadoPagoPaymentId(null);
 
         Reserva reservaGuardada = reservaRepositorio.save(reserva);
         log.info("Reserva creada con ID: {} para complejo '{}' (tipo: '{}'), asignada a: '{}'",
-                reservaGuardada.getId(), complejoAsignado.getNombre(), reserva.getTipoCanchaReservada(), nombreCanchaAsignada);
+                reservaGuardada.getId(), complejoAsignado.getNombre(), reserva.getTipoCanchaReservada(), reservaGuardada.getNombreCanchaAsignada());
 
         try {
             emailService.sendNewReservationNotification(reservaGuardada, adminEmail);
@@ -210,7 +185,6 @@ public class ReservaServicio {
         return reservaRepositorio.findById(id);
     }
 
-    // Método que solo confirma la reserva, sin cambiar el estado de pago.
     @Transactional
     public Reserva confirmarReserva(Long id, String confirmadorUsername) {
         log.info("Intentando confirmar reserva con ID: {} por usuario: {}", id, confirmadorUsername);
@@ -226,7 +200,6 @@ public class ReservaServicio {
             }
         }
 
-        // Verifica si la reserva no ha sido ya pagada o cancelada antes de confirmarla.
         if (r.getPagada() || r.getEstado().equalsIgnoreCase("cancelada")) {
             throw new IllegalStateException("La reserva ya está pagada o cancelada. No se puede confirmar.");
         }
@@ -318,15 +291,16 @@ public class ReservaServicio {
 
         reserva.setPagada(true);
         reserva.setMetodoPago(metodoPago);
-        reserva.setFechaPago(LocalDateTime.now()); // Establecer la fecha de pago
+        reserva.setFechaPago(LocalDateTime.now());
         reserva.setMercadoPagoPaymentId(mercadoPagoPaymentId);
-        reserva.setEstado("pagada"); // **CAMBIO CLAVE: Establece el estado a 'pagada'**
+        reserva.setEstado("pagada");
 
         Reserva updatedReserva = reservaRepositorio.save(reserva);
         log.info("Reserva con ID {} marcada como pagada. Nuevo estado: {}", updatedReserva.getId(), updatedReserva.getEstado());
         return updatedReserva;
     }
 
+    // Este método ya no se usa directamente para el frontend
     @Transactional(readOnly = true)
     public int countAvailableCanchasForSlot(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
         log.info("Contando canchas de tipo '{}' disponibles en complejo ID: {} para {} a las {}", tipoCancha, complejoId, fecha, hora);
@@ -343,10 +317,7 @@ public class ReservaServicio {
         LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
         LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
 
-        // Obtener la hora actual en la zona horaria de Argentina
         LocalDateTime nowArgentina = ZonedDateTime.now(ARGENTINA_ZONE_ID).toLocalDateTime();
-
-        // El slot solo se marca como 0 disponible si YA TERMINÓ en la hora de Argentina.
         if (slotEndTime.isBefore(nowArgentina)) {
             log.debug("Slot {}-{} para tipo {} en complejo {} está en el pasado (ya terminó en GMT-3), marcando como 0 disponibles.", slotStartTime.toLocalTime(), slotEndTime.toLocalTime(), tipoCancha, complejoId);
             return 0;
@@ -362,13 +333,59 @@ public class ReservaServicio {
         int bookedCount = conflictos.size();
         int availableCount = totalCanchasDeEsteTipo - bookedCount;
 
-        availableCount = Math.max(0, availableCount); // Asegura que nunca sea negativo
+        availableCount = Math.max(0, availableCount);
 
         log.debug("Encontradas {} canchas de tipo '{}' disponibles en complejo '{}' para {} a las {}. (Total: {}, Reservadas: {})",
                 availableCount, tipoCancha, complejo.getNombre(), fecha, hora, totalCanchasDeEsteTipo, bookedCount);
         return availableCount;
     }
 
+    // NUEVO MÉTODO para obtener los nombres de las canchas disponibles
+    @Transactional(readOnly = true)
+    public List<String> findAvailableCanchasForSlot(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
+        log.info("Buscando nombres de canchas disponibles para complejo ID: {}, tipo: {} en slot: {} {}", complejoId, tipoCancha, fecha, hora);
+
+        Complejo complejo = complejoRepositorio.findById(complejoId)
+                .orElseThrow(() -> new IllegalArgumentException("Complejo no encontrado con ID: " + complejoId));
+
+        Integer totalCanchasDeEsteTipo = complejo.getCanchaCounts().getOrDefault(tipoCancha, 0);
+        if (totalCanchasDeEsteTipo <= 0) {
+            return Collections.emptyList();
+        }
+
+        LocalDateTime slotStartTime = LocalDateTime.of(fecha, hora);
+        LocalDateTime slotEndTime = slotStartTime.plusMinutes(SLOT_DURATION_MINUTES);
+        LocalDateTime nowArgentina = ZonedDateTime.now(ARGENTINA_ZONE_ID).toLocalDateTime();
+
+        if (slotEndTime.isBefore(nowArgentina)) {
+            return Collections.emptyList();
+        }
+
+        List<Reserva> conflictos = reservaRepositorio.findConflictingReservationsForPool(
+                complejoId,
+                tipoCancha,
+                slotStartTime,
+                slotEndTime
+        );
+
+        Set<String> nombresCanchasOcupadas = conflictos.stream()
+                .map(Reserva::getNombreCanchaAsignada)
+                .collect(Collectors.toSet());
+
+        List<String> canchasDisponibles = new ArrayList<>();
+        for (int i = 1; i <= totalCanchasDeEsteTipo; i++) {
+            String posibleNombre = tipoCancha + " - Instancia " + i;
+            if (!nombresCanchasOcupadas.contains(posibleNombre)) {
+                canchasDisponibles.add(posibleNombre);
+            }
+        }
+
+        log.debug("Encontradas {} canchas disponibles: {}", canchasDisponibles.size(), canchasDisponibles);
+        return canchasDisponibles;
+    }
+
+
+    // El método generateAssignedCanchaName ya no es necesario, el frontend lo manejará.
     @Transactional(readOnly = true)
     public Optional<String> generateAssignedCanchaName(Long complejoId, String tipoCancha, LocalDate fecha, LocalTime hora) {
         log.info("Generando nombre de cancha asignada para complejo ID: {} tipo: {} en slot: {}", complejoId, tipoCancha, fecha + " " + hora);
@@ -527,8 +544,6 @@ public class ReservaServicio {
 
         // Si la reserva está pagada, el reembolso puede requerir lógica adicional
         if (reserva.getPagada()) {
-            // Aquí iría la lógica de reembolso si fuera necesario.
-            // Por ahora, solo se cambia el estado.
             log.warn("La reserva ID {} está pagada. Se cancela, pero no se procesa un reembolso automático.", id);
         }
 
