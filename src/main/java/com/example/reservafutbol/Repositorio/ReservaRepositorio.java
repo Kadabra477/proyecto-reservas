@@ -26,18 +26,6 @@ public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
             @Param("endTime") LocalDateTime endTime
     );
 
-    // NUEVO MÉTODO: Encuentra reservas en conflicto para una cancha específica.
-    @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND r.nombreCanchaAsignada = :nombreCancha AND " +
-            "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
-            "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', MINUTE, 60, r.fechaHora) > :startTime)")
-    List<Reserva> findConflictingReservationsForCancha(
-            @Param("complejoId") Long complejoId,
-            @Param("tipoCancha") String tipoCancha,
-            @Param("nombreCancha") String nombreCancha,
-            @Param("startTime") LocalDateTime startTime,
-            @Param("endTime") LocalDateTime endTime
-    );
-
     @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
             "FUNCTION('DATE', r.fechaHora) = :fecha AND " +
             "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp')")

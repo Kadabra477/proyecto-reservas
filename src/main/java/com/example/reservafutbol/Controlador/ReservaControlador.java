@@ -54,7 +54,6 @@ public class ReservaControlador {
     @Autowired(required = false)
     private PdfGeneratorService pdfGeneratorService;
 
-    // Endpoint para obtener reservas por complejo y tipo (útil para ver slots específicos)
     @GetMapping("/complejo/{complejoId}/tipo/{tipoCancha}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerReservasPorComplejoYTipo(
@@ -79,7 +78,6 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al obtener reservas.");
         }
     }
-
 
     @GetMapping("/admin/todas")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
@@ -133,7 +131,6 @@ public class ReservaControlador {
         }
     }
 
-
     @PostMapping("/crear")
     public ResponseEntity<?> crearReservaConDTO(@RequestBody ReservaDTO dto, Authentication authentication) {
         log.info("POST /api/reservas/crear por usuario {} para complejo ID: {}, tipoCancha: {} en fecha/hora: {}",
@@ -163,25 +160,11 @@ public class ReservaControlador {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("El precio para este tipo de cancha no está configurado en el complejo.");
         }
 
-        // **NUEVA VALIDACIÓN**: Verificar la disponibilidad de la cancha específica
-        List<String> canchasDisponibles = reservaServicio.findAvailableCanchasForSlot(
-                dto.getComplejoId(), dto.getTipoCancha(), dto.getFecha(), dto.getHora()
-        );
-
-        if (canchasDisponibles.isEmpty()) {
-            log.warn("No hay canchas disponibles para el tipo '{}' en complejo ID: {} a {}.", dto.getTipoCancha(), dto.getComplejoId(), dto.getFecha() + " " + dto.getHora());
-            return ResponseEntity.badRequest().body("No hay canchas disponibles para el tipo y horario seleccionado. Por favor, elige otro.");
-        }
-
-        // Asignar la primera cancha disponible
-        String nombreCanchaAsignada = canchasDisponibles.get(0);
-
         Reserva nuevaReserva = new Reserva();
         nuevaReserva.setUsuario(usuario);
         nuevaReserva.setUserEmail(username);
         nuevaReserva.setComplejo(complejo);
         nuevaReserva.setTipoCanchaReservada(dto.getTipoCancha());
-        nuevaReserva.setNombreCanchaAsignada(nombreCanchaAsignada); // Asignar la cancha
         nuevaReserva.setFechaHora(LocalDateTime.of(dto.getFecha(), dto.getHora()));
         nuevaReserva.setMetodoPago(dto.getMetodoPago());
         nuevaReserva.setTelefono(dto.getTelefono().trim());
@@ -206,7 +189,6 @@ public class ReservaControlador {
         }
     }
 
-    // El endpoint de "confirmar" ahora solo cambia el estado a 'confirmada'.
     @PutMapping("/{id}/confirmar")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<ReservaDetalleDTO> confirmar(@PathVariable Long id, Authentication authentication) {
@@ -228,7 +210,6 @@ public class ReservaControlador {
         }
     }
 
-    // **NUEVO ENDPOINT** para marcar una reserva como pagada.
     @PutMapping("/{id}/marcar-pagada")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     public ResponseEntity<ReservaDetalleDTO> marcarPagada(@PathVariable Long id,
@@ -322,27 +303,27 @@ public class ReservaControlador {
         }
     }
 
-    // El endpoint de disponibilidad ahora devuelve una lista de nombres de canchas
-    @GetMapping("/canchas-disponibles")
-    public ResponseEntity<List<String>> getAvailableCanchas(
+    @GetMapping("/disponibilidad-por-tipo")
+    public ResponseEntity<Integer> getAvailableCanchasCount(
             @RequestParam @NotNull Long complejoId,
             @RequestParam @NotBlank String tipoCancha,
             @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fecha,
             @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime hora) {
-        log.info("GET /api/reservas/canchas-disponibles?complejoId={}&tipoCancha={}&fecha={}&hora={}",
+        log.info("GET /api/reservas/disponibilidad-por-tipo?complejoId={}&tipoCancha={}&fecha={}&hora={}",
                 complejoId, tipoCancha, fecha, hora);
         try {
-            List<String> availableCanchas = reservaServicio.findAvailableCanchasForSlot(complejoId, tipoCancha, fecha, hora);
-            return ResponseEntity.ok(availableCanchas);
+            int availableCount = reservaServicio.countAvailableCanchasForSlot(complejoId, tipoCancha, fecha, hora);
+            return ResponseEntity.ok(availableCount);
         } catch (IllegalArgumentException e) {
-            log.warn("Error de validación al obtener canchas disponibles: {}", e.getMessage());
+            log.warn("Error de validación al obtener disponibilidad por tipo: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            log.error("Error al obtener canchas disponibles para tipo '{}' en complejo ID: {} a {}: {}",
+            log.error("Error al obtener cantidad de canchas disponibles para tipo '{}' en complejo ID: {} a {}: {}",
                     tipoCancha, complejoId, fecha + " " + hora, e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al verificar disponibilidad.");
         }
     }
+
     @GetMapping("/complejo/mis-reservas")
     @PreAuthorize("hasRole('COMPLEX_OWNER')")
     public ResponseEntity<List<ReservaDetalleDTO>> obtenerReservasDeMiComplejo(Authentication authentication) {
@@ -365,6 +346,7 @@ public class ReservaControlador {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno al obtener reservas.");
         }
     }
+
     @PutMapping("/{id}/cancelar")
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER', 'USER')")
     public ResponseEntity<Void> cancelarReserva(@PathVariable Long id, Authentication authentication) {
