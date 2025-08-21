@@ -118,6 +118,24 @@ public class UsuarioControlador {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Usuario con ID " + userId + " no encontrado.");
         }
     }
+
+    // 🆕 NUEVO ENDPOINT PARA ACTUALIZAR ROLES 🆕
+    @PutMapping("/{userId}/roles")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> updateRoles(@PathVariable Long userId, @RequestBody List<String> roleNames) {
+        log.info("PUT /api/users/{}/roles - Actualizando roles para el usuario.", userId);
+        try {
+            usuarioServicio.updateUserRoles(userId, roleNames);
+            return ResponseEntity.ok("Roles actualizados exitosamente.");
+        } catch (IllegalArgumentException e) {
+            log.error("Error al actualizar roles:", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        } catch (Exception e) {
+            log.error("Error inesperado al actualizar roles:", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al procesar la solicitud.");
+        }
+    }
+
     private Optional<User> obtenerUsuarioAutenticado(Authentication auth) {
         if (auth == null || !auth.isAuthenticated()) {
             return Optional.empty();

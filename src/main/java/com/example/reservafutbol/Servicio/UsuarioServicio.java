@@ -201,11 +201,15 @@ public class UsuarioServicio implements UserDetailsService {
         usuarioRepositorio.save(user);
         log.info("Perfil actualizado correctamente para usuario: {}", user.getUsername());
     }
-
     @Transactional
-    public User updateUserRoles(Long userId, Set<ERole> newRolesEnum) {
+    public User updateUserRoles(Long userId, List<String> roleNames) {
         User user = usuarioRepositorio.findById(userId)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con ID: " + userId));
+
+        // Convert the incoming List<String> of role names to a Set of ERole enums
+        Set<ERole> newRolesEnum = roleNames.stream()
+                .map(ERole::valueOf)
+                .collect(Collectors.toSet());
 
         Set<Role> rolesToSet = new HashSet<>();
 
@@ -237,7 +241,6 @@ public class UsuarioServicio implements UserDetailsService {
         log.info("Roles actualizados para usuario {}: {}", user.getUsername(), rolesToSet.stream().map(r -> r.getName().name()).collect(Collectors.joining(", ")));
         return usuarioRepositorio.save(user);
     }
-
     @Transactional(readOnly = true)
     public boolean existsOtherAdmin(Long currentAdminId) {
         log.debug("Verificando si existen otros administradores además de ID: {}", currentAdminId);
