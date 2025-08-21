@@ -17,7 +17,7 @@ import java.util.Optional;
 public interface ReservaRepositorio extends JpaRepository<Reserva, Long> {
 
     @Query("SELECT r FROM Reserva r WHERE r.complejo.id = :complejoId AND r.tipoCanchaReservada = :tipoCancha AND " +
-            "(r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
+            "(r.estado = 'pendiente' OR r.estado = 'confirmada' OR r.estado = 'pagada' OR r.estado = 'pendiente_pago_efectivo' OR r.estado = 'pendiente_pago_mp') AND " +
             "(r.fechaHora < :endTime AND FUNCTION('TIMESTAMPADD', MINUTE, 60, r.fechaHora) > :startTime)")
     List<Reserva> findConflictingReservationsForPool(
             @Param("complejoId") Long complejoId,
