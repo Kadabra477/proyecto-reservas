@@ -157,7 +157,7 @@ public class ComplejoControlador {
         }
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminarComplejo(@PathVariable Long id, Authentication authentication) {
         String username = authentication.getName();
