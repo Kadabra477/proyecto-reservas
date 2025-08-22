@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import net.coobird.thumbnailator.Thumbnails;
-import net.coobird.thumbnailator.geometry.Positions; // Importación necesaria para usar Positions
+import net.coobird.thumbnailator.geometry.Positions;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -21,9 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap; // Importar HashMap
-import java.util.Map;   // Importar Map
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -42,70 +40,60 @@ public class S3StorageService {
     private final String complexFolder = "complejos/";
 
     /**
-     * Sube un archivo MultipartFile de imagen a AWS S3 después de procesarlo (redimensionar y comprimir),
-     * generando múltiples resoluciones, y devuelve un mapa con sus URL públicas.
+     * Sube una imagen individual a S3 y devuelve su URL.
+     * Genera una versión "original" y una "thumbnail".
      *
-     * @param multipartFile El archivo de imagen a subir (ej. una foto de complejo).
-     * @return Un mapa donde la clave es el tipo de resolución (ej. "thumbnail", "large") y el valor es la URL pública.
-     * @throws IOException Sí ocurre un error durante el procesamiento o subida.
+     * @param multipartFile El archivo de imagen a subir.
+     * @param keyPrefix Un prefijo para la clave de S3 (ej. "cover/", "carousel/").
+     * @return Un mapa con las URLs de la imagen original y la miniatura.
+     * @throws IOException Si ocurre un error durante el procesamiento o subida.
      * @throws IllegalArgumentException Si el archivo no es una imagen válida o está vacío.
      */
-    public Map<String, String> uploadComplexImageWithResolutions(MultipartFile multipartFile) throws IOException {
-        if (multipartFile.isEmpty() || multipartFile.getContentType() == null
+    public Map<String, String> uploadSingleImageWithResolutions(MultipartFile multipartFile, String keyPrefix) throws IOException {
+        if (multipartFile == null || multipartFile.isEmpty() || multipartFile.getContentType() == null
                 || !multipartFile.getContentType().startsWith("image/")) {
             throw new IllegalArgumentException("El archivo debe ser una imagen válida (JPG, PNG, GIF, etc.) y no puede estar vacío.");
         }
 
         Map<String, String> imageUrls = new HashMap<>();
-        String originalFilename = multipartFile.getOriginalFilename();
-        String fileExtension = "";
-        int dotIndex = originalFilename.lastIndexOf('.');
-        if (dotIndex > 0) {
-            fileExtension = originalFilename.substring(dotIndex + 1).toLowerCase();
-        } else {
-            // Fallback para extensión si no se encuentra en el nombre original
-            if (multipartFile.getContentType().equals("image/jpeg")) fileExtension = "jpg";
-            else if (multipartFile.getContentType().equals("image/png")) fileExtension = "png";
-            else if (multipartFile.getContentType().equals("image/gif")) fileExtension = "gif";
-            else fileExtension = "jpg"; // Fallback general
-        }
+        String fileExtension = getFileExtension(multipartFile);
 
         BufferedImage originalImage = ImageIO.read(multipartFile.getInputStream());
+        String baseFileName = UUID.randomUUID().toString() + "_" + System.currentTimeMillis();
 
-        // --- Generar y subir la versión GRANDE (para banners/detalles) ---
-        String largeKey = complexFolder + "large/" + UUID.randomUUID().toString() + "_" + System.currentTimeMillis() + "." + fileExtension;
-        ByteArrayOutputStream largeOs = new ByteArrayOutputStream();
+        // --- Subir la versión ORIGINAL (para detalles/banners) ---
+        String originalKey = complexFolder + keyPrefix + "original/" + baseFileName + "." + fileExtension;
+        ByteArrayOutputStream originalOs = new ByteArrayOutputStream();
         try {
             Thumbnails.of(originalImage)
-                    .size(1920, 1080) // Redimensionar a un tamaño grande, manteniendo aspecto
-                    .keepAspectRatio(true)
-                    .outputFormat("jpg")
-                    .outputQuality(0.85) // Mayor calidad para la imagen grande
-                    .toOutputStream(largeOs);
+                    .scale(1.0) // Mantener tamaño original (o se podría redimensionar a un máximo si es muy grande)
+                    .outputFormat("jpg") // Convertir a JPG para consistencia y compresión
+                    .outputQuality(0.9) // Alta calidad
+                    .toOutputStream(originalOs);
 
-            InputStream largeIs = new ByteArrayInputStream(largeOs.toByteArray());
-            ObjectMetadata largeMetadata = new ObjectMetadata();
-            largeMetadata.setContentLength(largeOs.size());
-            largeMetadata.setContentType("image/jpeg");
-            s3Client.putObject(new PutObjectRequest(bucketName, largeKey, largeIs, largeMetadata));
-            imageUrls.put("large", s3BaseUrl + largeKey);
-            largeIs.close(); // Cerrar InputStream después de usar
+            InputStream originalIs = new ByteArrayInputStream(originalOs.toByteArray());
+            ObjectMetadata originalMetadata = new ObjectMetadata();
+            originalMetadata.setContentLength(originalOs.size());
+            originalMetadata.setContentType("image/jpeg");
+            s3Client.putObject(new PutObjectRequest(bucketName, originalKey, originalIs, originalMetadata));
+            imageUrls.put("original", s3BaseUrl + originalKey);
+            originalIs.close();
         } catch (IOException e) {
-            log.error("Error al procesar/subir imagen grande: {}", e.getMessage(), e);
-            throw new IOException("Error al procesar la imagen grande: " + e.getMessage(), e);
+            log.error("Error al procesar/subir imagen original: {}", e.getMessage(), e);
+            throw new IOException("Error al procesar la imagen original: " + e.getMessage(), e);
         } finally {
-            largeOs.close();
+            originalOs.close();
         }
 
-        // --- Generar y subir la versión PEQUEÑA (para tarjetas/miniaturas) ---
-        String thumbnailKey = complexFolder + "thumbnail/" + UUID.randomUUID().toString() + "_" + System.currentTimeMillis() + "." + fileExtension;
+        // --- Generar y subir la versión THUMBNAIL (para tarjetas/miniaturas) ---
+        String thumbnailKey = complexFolder + keyPrefix + "thumbnail/" + baseFileName + "." + fileExtension;
         ByteArrayOutputStream thumbnailOs = new ByteArrayOutputStream();
         try {
             Thumbnails.of(originalImage)
-                    .size(400, 300) // Redimensionar a un tamaño más pequeño
+                    .size(400, 300) // Tamaño para miniaturas
                     .keepAspectRatio(true)
                     .outputFormat("jpg")
-                    .outputQuality(0.7) // Menor calidad para miniaturas, si es aceptable
+                    .outputQuality(0.7) // Calidad media para miniaturas
                     .toOutputStream(thumbnailOs);
 
             InputStream thumbnailIs = new ByteArrayInputStream(thumbnailOs.toByteArray());
@@ -114,7 +102,7 @@ public class S3StorageService {
             thumbnailMetadata.setContentType("image/jpeg");
             s3Client.putObject(new PutObjectRequest(bucketName, thumbnailKey, thumbnailIs, thumbnailMetadata));
             imageUrls.put("thumbnail", s3BaseUrl + thumbnailKey);
-            thumbnailIs.close(); // Cerrar InputStream después de usar
+            thumbnailIs.close();
         } catch (IOException e) {
             log.error("Error al procesar/subir imagen thumbnail: {}", e.getMessage(), e);
             throw new IOException("Error al procesar la imagen thumbnail: " + e.getMessage(), e);
@@ -122,10 +110,31 @@ public class S3StorageService {
             thumbnailOs.close();
         }
 
-        // Puedes añadir más resoluciones aquí si las necesitas (ej. "medium", "original")
-
         return imageUrls;
     }
+
+    /**
+     * Sube múltiples archivos de imagen para el carrusel.
+     *
+     * @param multipartFiles Array de archivos de imagen.
+     * @return Lista de mapas, donde cada mapa contiene las URLs de las resoluciones para una imagen.
+     * @throws IOException Si ocurre un error durante el procesamiento o subida.
+     * @throws IllegalArgumentException Si algún archivo no es una imagen válida o está vacío.
+     */
+    public List<Map<String, String>> uploadCarouselImagesWithResolutions(MultipartFile[] multipartFiles) throws IOException {
+        List<Map<String, String>> uploadedImages = new ArrayList<>();
+        if (multipartFiles == null || multipartFiles.length == 0) {
+            return uploadedImages;
+        }
+
+        for (MultipartFile file : multipartFiles) {
+            if (file != null && !file.isEmpty()) {
+                uploadedImages.add(uploadSingleImageWithResolutions(file, "carousel/"));
+            }
+        }
+        return uploadedImages;
+    }
+
 
     /**
      * Método para eliminar archivos de S3.
@@ -150,6 +159,15 @@ public class S3StorageService {
         }
     }
 
-    // Este método ya no se usa y puede ser eliminado si no hay otras dependencias.
-    // private File convertMultiPartToFile(MultipartFile file) throws IOException { /* ... */ }
+    private String getFileExtension(MultipartFile file) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename != null && originalFilename.lastIndexOf('.') > 0) {
+            return originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
+        }
+        // Fallback si no se encuentra extensión en el nombre original
+        if (file.getContentType().equals("image/jpeg")) return "jpg";
+        if (file.getContentType().equals("image/png")) return "png";
+        if (file.getContentType().equals("image/gif")) return "gif";
+        return "jpg"; // Fallback general
+    }
 }

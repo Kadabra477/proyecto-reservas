@@ -2,10 +2,9 @@ package com.example.reservafutbol.Servicio;
 
 import com.example.reservafutbol.Modelo.Complejo;
 import com.example.reservafutbol.Modelo.ERole;
-import com.example.reservafutbol.Modelo.Role; // Asegúrate de que esta importación sea correcta si Role se usa en otro lugar
+import com.example.reservafutbol.Modelo.Role;
 import com.example.reservafutbol.Modelo.User;
 import com.example.reservafutbol.Repositorio.ComplejoRepositorio;
-// import com.example.reservafutbol.Repositorio.RoleRepositorio; // No necesario si no se usa directamente
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,14 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.io.IOException;
+import java.util.stream.Collectors;
 
 @Service
 public class ComplejoServicio {
@@ -35,8 +29,6 @@ public class ComplejoServicio {
 
     @Autowired
     private S3StorageService s3StorageService;
-
-    // No necesitas RoleRepositorio aquí si no lo usas directamente
 
     @Transactional
     public Complejo crearComplejo(Complejo complejo, String propietarioUsername) {
@@ -62,14 +54,15 @@ public class ComplejoServicio {
     }
 
     /**
-     * Método para crear un complejo por un ADMIN. Permite la subida de una foto.
+     * Método para crear un complejo por un ADMIN. Permite la subida de una foto de portada y múltiples fotos de carrusel.
      *
      * @param nombreComplejo Nombre del complejo.
      * @param propietarioUsername Email del propietario.
      * @param descripcion Descripción.
      * @param ubicacion Ubicación.
      * @param telefono Teléfono.
-     * @param photoFiles Array de archivos de imagen (MultipartFile[]) opcional.
+     * @param coverPhoto Archivo de imagen para la portada (MultipartFile) opcional.
+     * @param carouselPhotos Array de archivos de imagen (MultipartFile[]) opcional para el carrusel.
      * @param horarioApertura Horario de apertura.
      * @param horarioCierre Horario de cierre.
      * @param canchaCounts Map de cantidades de canchas.
@@ -84,7 +77,7 @@ public class ComplejoServicio {
     @Transactional
     public Complejo crearComplejoParaAdmin(String nombreComplejo, String propietarioUsername,
                                            String descripcion, String ubicacion, String telefono,
-                                           MultipartFile[] photoFiles,
+                                           MultipartFile coverPhoto, MultipartFile[] carouselPhotos,
                                            LocalTime horarioApertura, LocalTime horarioCierre,
                                            Map<String, Integer> canchaCounts,
                                            Map<String, Double> canchaPrices,
@@ -117,18 +110,24 @@ public class ComplejoServicio {
         nuevoComplejo.setUbicacion(ubicacion);
         nuevoComplejo.setTelefono(telefono);
 
-        // ¡MODIFICACIÓN CLAVE AQUÍ!
-        // Si hay archivos de fotos, procesarlos y guardar las URLs de las diferentes resoluciones
-        if (photoFiles != null && photoFiles.length > 0 && !photoFiles[0].isEmpty()) {
-            // Asumiendo que solo se sube una imagen principal para el complejo en este formulario
-            // Si quieres múltiples imágenes por complejo, la lógica sería más compleja aquí
-            Map<String, String> uploadedUrlsMap = s3StorageService.uploadComplexImageWithResolutions(photoFiles[0]);
-            nuevoComplejo.setFotoUrlsPorResolucion(uploadedUrlsMap); // Guardar el mapa de URLs
-        } else {
-            // Asegurarse de que el mapa no sea nulo si no se suben fotos
-            nuevoComplejo.setFotoUrlsPorResolucion(new HashMap<>());
+        Map<String, String> fotoUrlsPorResolucion = new HashMap<>();
+
+        // Subir imagen de portada si existe
+        if (coverPhoto != null && !coverPhoto.isEmpty()) {
+            Map<String, String> coverPhotoUrls = s3StorageService.uploadSingleImageWithResolutions(coverPhoto, "cover/");
+            fotoUrlsPorResolucion.putAll(coverPhotoUrls); // Añade original y thumbnail de la portada
         }
 
+        // Subir imágenes del carrusel si existen
+        if (carouselPhotos != null && carouselPhotos.length > 0) {
+            List<Map<String, String>> uploadedCarouselImages = s3StorageService.uploadCarouselImagesWithResolutions(carouselPhotos);
+            for (Map<String, String> imgMap : uploadedCarouselImages) {
+                // Generar una clave única para cada imagen del carrusel, por ejemplo, "carousel_uuid"
+                fotoUrlsPorResolucion.put("carousel_" + UUID.randomUUID().toString(), imgMap.get("original"));
+                // También podrías guardar thumbnails si los necesitas para el carrusel
+            }
+        }
+        nuevoComplejo.setFotoUrlsPorResolucion(fotoUrlsPorResolucion);
 
         nuevoComplejo.setHorarioApertura(horarioApertura != null ? horarioApertura : LocalTime.of(8, 0));
         nuevoComplejo.setHorarioCierre(horarioCierre != null ? horarioCierre : LocalTime.of(22, 0));
@@ -169,11 +168,12 @@ public class ComplejoServicio {
     }
 
     /**
-     * Método para actualizar un complejo. Permite la actualización de la foto.
+     * Método para actualizar un complejo. Permite la actualización de la foto de portada y las fotos del carrusel.
      *
      * @param id ID del complejo a actualizar.
-     * @param complejoDetails Detalles del complejo (sin la URL de la foto).
-     * @param photoFiles Array de archivos de imagen (MultipartFile[]) opcional para actualizar.
+     * @param complejoDetails Detalles del complejo (sin las URLs de las fotos, estas se manejan por separado).
+     * @param coverPhoto Archivo de imagen para la portada (MultipartFile) opcional para actualizar.
+     * @param carouselPhotos Array de archivos de imagen (MultipartFile[]) opcional para actualizar el carrusel.
      * @param editorUsername Nombre de usuario de quien edita.
      * @return El complejo actualizado.
      * @throws IllegalArgumentException si el complejo no existe o los datos son inválidos.
@@ -181,7 +181,9 @@ public class ComplejoServicio {
      * @throws IOException si hay un error al procesar/subir la imagen.
      */
     @Transactional
-    public Complejo actualizarComplejo(Long id, Complejo complejoDetails, MultipartFile[] photoFiles, String editorUsername) throws IOException {
+    public Complejo actualizarComplejo(Long id, Complejo complejoDetails,
+                                       MultipartFile coverPhoto, MultipartFile[] carouselPhotos,
+                                       String editorUsername) throws IOException {
         log.info("Actualizando complejo con ID: {} por usuario: {}", id, editorUsername);
 
         Complejo complejoExistente = complejoRepositorio.findById(id)
@@ -202,29 +204,61 @@ public class ComplejoServicio {
         complejoExistente.setUbicacion(complejoDetails.getUbicacion());
         complejoExistente.setTelefono(complejoDetails.getTelefono());
 
-        // **MODIFICACIÓN CLAVE**: Manejo de la actualización de imágenes.
-        // Si hay nuevos archivos, se borran los viejos y se suben los nuevos.
-        if (photoFiles != null && photoFiles.length > 0 && !photoFiles[0].isEmpty()) {
-            // Eliminar fotos antiguas (todas las resoluciones)
-            if (complejoExistente.getFotoUrlsPorResolucion() != null) {
-                for (String oldUrl : complejoExistente.getFotoUrlsPorResolucion().values()) {
-                    s3StorageService.deleteFile(oldUrl);
-                }
-            }
-            // Subir las nuevas fotos y obtener todas las resoluciones
-            Map<String, String> newUrlsMap = s3StorageService.uploadComplexImageWithResolutions(photoFiles[0]);
-            complejoExistente.setFotoUrlsPorResolucion(newUrlsMap);
-        } else if (complejoDetails.getFotoUrlsPorResolucion() != null && complejoDetails.getFotoUrlsPorResolucion().isEmpty()) {
-            // Si el frontend envía un mapa vacío, es una señal para eliminar todas las fotos.
-            if (complejoExistente.getFotoUrlsPorResolucion() != null) {
-                for (String oldUrl : complejoExistente.getFotoUrlsPorResolucion().values()) {
-                    s3StorageService.deleteFile(oldUrl);
-                }
-            }
-            complejoExistente.getFotoUrlsPorResolucion().clear();
+        Map<String, String> fotoUrlsActualizadas = new HashMap<>();
+        if (complejoExistente.getFotoUrlsPorResolucion() != null) {
+            fotoUrlsActualizadas.putAll(complejoExistente.getFotoUrlsPorResolucion());
         }
-        // Si `photoFiles` es nulo/vacío y `complejoDetails.getFotoUrlsPorResolucion()` no es vacío,
-        // significa que no se cambió nada y se mantiene el estado del mapa existente.
+
+        // --- Manejo de la imagen de portada ---
+        if (coverPhoto != null && !coverPhoto.isEmpty()) {
+            // Eliminar la portada antigua si existe
+            if (fotoUrlsActualizadas.containsKey("original")) {
+                s3StorageService.deleteFile(fotoUrlsActualizadas.get("original"));
+                fotoUrlsActualizadas.remove("original");
+                fotoUrlsActualizadas.remove("thumbnail"); // También eliminar su thumbnail
+            }
+            Map<String, String> newCoverUrls = s3StorageService.uploadSingleImageWithResolutions(coverPhoto, "cover/");
+            fotoUrlsActualizadas.putAll(newCoverUrls);
+        } else if (complejoDetails.getFotoUrlsPorResolucion() != null && !complejoDetails.getFotoUrlsPorResolucion().containsKey("original")) {
+            // Si el frontend indica que la portada fue eliminada explícitamente
+            if (fotoUrlsActualizadas.containsKey("original")) {
+                s3StorageService.deleteFile(fotoUrlsActualizadas.get("original"));
+                fotoUrlsActualizadas.remove("original");
+                fotoUrlsActualizadas.remove("thumbnail");
+            }
+        }
+        // Si coverPhoto es nulo/vacío y complejoDetails.getFotoUrlsPorResolucion() contiene 'original',
+        // significa que no se cambió y se mantiene la existente.
+
+        // --- Manejo de las imágenes del carrusel ---
+        if (carouselPhotos != null && carouselPhotos.length > 0) {
+            // Eliminar todas las fotos de carrusel antiguas (las que no son "original" ni "thumbnail")
+            List<String> keysToRemove = fotoUrlsActualizadas.keySet().stream()
+                    .filter(key -> key.startsWith("carousel_"))
+                    .collect(Collectors.toList());
+            for (String key : keysToRemove) {
+                s3StorageService.deleteFile(fotoUrlsActualizadas.get(key));
+                fotoUrlsActualizadas.remove(key);
+            }
+
+            List<Map<String, String>> uploadedCarouselImages = s3StorageService.uploadCarouselImagesWithResolutions(carouselPhotos);
+            for (Map<String, String> imgMap : uploadedCarouselImages) {
+                fotoUrlsActualizadas.put("carousel_" + UUID.randomUUID().toString(), imgMap.get("original"));
+            }
+        } else if (complejoDetails.getFotoUrlsPorResolucion() != null && complejoDetails.getFotoUrlsPorResolucion().keySet().stream().noneMatch(key -> key.startsWith("carousel_"))) {
+            // Si el frontend indica que las fotos del carrusel fueron eliminadas explícitamente
+            List<String> keysToRemove = fotoUrlsActualizadas.keySet().stream()
+                    .filter(key -> key.startsWith("carousel_"))
+                    .collect(Collectors.toList());
+            for (String key : keysToRemove) {
+                s3StorageService.deleteFile(fotoUrlsActualizadas.get(key));
+                fotoUrlsActualizadas.remove(key);
+            }
+        }
+        // Si carouselPhotos es nulo/vacío y complejoDetails.getFotoUrlsPorResolucion() contiene 'carousel_',
+        // significa que no se cambió y se mantienen las existentes.
+
+        complejoExistente.setFotoUrlsPorResolucion(fotoUrlsActualizadas);
 
         complejoExistente.setHorarioApertura(complejoDetails.getHorarioApertura());
         complejoExistente.setHorarioCierre(complejoDetails.getHorarioCierre());
@@ -255,7 +289,6 @@ public class ComplejoServicio {
             throw new SecurityException("Acceso denegado: No tienes permisos para eliminar este complejo.");
         }
 
-        // Eliminar todas las fotos de S3 al eliminar el complejo
         if (complejoExistente.getFotoUrlsPorResolucion() != null && !complejoExistente.getFotoUrlsPorResolucion().isEmpty()) {
             try {
                 for (String url : complejoExistente.getFotoUrlsPorResolucion().values()) {
@@ -263,7 +296,6 @@ public class ComplejoServicio {
                 }
             } catch (Exception e) {
                 log.error("Error al intentar eliminar las fotos de S3 para el complejo ID {}: {}", id, e.getMessage());
-                // No lanzar la excepción para no impedir la eliminación del complejo en la BD
             }
         }
 
