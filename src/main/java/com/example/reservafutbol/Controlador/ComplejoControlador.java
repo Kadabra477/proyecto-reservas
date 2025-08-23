@@ -54,23 +54,19 @@ public class ComplejoControlador {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Complejo> obtenerComplejoPorId(@PathVariable Long id) {
+    public ResponseEntity<ComplejoResponseDTO> obtenerComplejoPorId(@PathVariable Long id) {
         log.info("GET /api/complejos/{} - Obteniendo complejo por ID.", id);
         return complejoServicio.buscarComplejoPorId(id)
-                .map(ResponseEntity::ok)
+                .map(complejo -> {
+                    ComplejoResponseDTO dto = new ComplejoResponseDTO(complejo);
+                    if (complejo.getFotoUrlsPorResolucion() != null) {
+                        dto.setPortadaUrl(complejo.getFotoUrlsPorResolucion().get("original"));
+                    }
+                    return ResponseEntity.ok(dto);
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    /**
-     * Endpoint para crear un nuevo complejo.
-     * Ahora acepta una imagen de portada y un array de archivos de imagen para el carrusel.
-     *
-     * @param request Datos del complejo (JSON).
-     * @param coverPhoto Archivo de imagen para la portada (opcional).
-     * @param carouselPhotos Array de archivos de imagen para el carrusel (opcional).
-     * @param authentication Información de autenticación del usuario.
-     * @return ResponseEntity con el complejo creado o un error.
-     */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> crearComplejo(
@@ -88,8 +84,8 @@ public class ComplejoControlador {
                     request.getDescripcion(),
                     request.getUbicacion(),
                     request.getTelefono(),
-                    coverPhoto, // Pasar la imagen de portada
-                    carouselPhotos, // Pasar el array de imágenes del carrusel
+                    coverPhoto,
+                    carouselPhotos,
                     request.getHorarioApertura(),
                     request.getHorarioCierre(),
                     request.getCanchaCounts(),
@@ -111,17 +107,6 @@ public class ComplejoControlador {
         }
     }
 
-    /**
-     * Endpoint para actualizar un complejo existente.
-     * Ahora acepta una imagen de portada y un array de archivos de imagen para el carrusel.
-     *
-     * @param id ID del complejo a actualizar.
-     * @param complejoDetails Datos actualizados del complejo (JSON).
-     * @param coverPhoto Archivo de imagen para la portada (opcional).
-     * @param carouselPhotos Array de archivos de imagen para el carrusel (opcional).
-     * @param authentication Información de autenticación del usuario.
-     * @return ResponseEntity con el complejo actualizado o un error.
-     */
     @PreAuthorize("hasAnyRole('ADMIN', 'COMPLEX_OWNER')")
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> actualizarComplejo(
@@ -136,8 +121,8 @@ public class ComplejoControlador {
             Complejo complejoActualizado = complejoServicio.actualizarComplejo(
                     id,
                     complejoDetails,
-                    coverPhoto, // Pasar la imagen de portada
-                    carouselPhotos, // Pasar las imágenes del carrusel
+                    coverPhoto,
+                    carouselPhotos,
                     username
             );
             return new ResponseEntity<>(complejoActualizado, HttpStatus.OK);

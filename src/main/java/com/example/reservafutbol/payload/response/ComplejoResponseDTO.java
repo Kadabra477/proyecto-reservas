@@ -20,8 +20,8 @@ public class ComplejoResponseDTO {
     private String descripcion;
     private String ubicacion;
     private String telefono;
-    private String portadaUrl; // URL de la imagen de portada
-    private List<String> carruselUrls; // URLs de las imágenes del carrusel
+    private String portadaUrl;
+    private List<String> carruselUrls;
     private LocalTime horarioApertura;
     private LocalTime horarioCierre;
     private String propietarioUsername;
@@ -38,12 +38,12 @@ public class ComplejoResponseDTO {
         this.ubicacion = complejo.getUbicacion();
         this.telefono = complejo.getTelefono();
 
-        // Extrae la URL de la miniatura para la portada
         if (complejo.getFotoUrlsPorResolucion() != null) {
             this.portadaUrl = complejo.getFotoUrlsPorResolucion().get("thumbnail");
+        } else {
+            this.portadaUrl = null;
         }
 
-        // Extrae las URLs del carrusel
         if (complejo.getFotoUrlsPorResolucion() != null) {
             this.carruselUrls = complejo.getFotoUrlsPorResolucion().entrySet().stream()
                     .filter(entry -> entry.getKey().startsWith("carousel_"))
