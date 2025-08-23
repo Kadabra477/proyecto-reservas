@@ -2,10 +2,13 @@ package com.example.reservafutbol.Servicio;
 
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,17 +25,38 @@ import java.io.InputStream;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
 public class S3StorageService {
 
     private static final Logger log = LoggerFactory.getLogger(S3StorageService.class);
 
     private final AmazonS3 s3Client;
-
-    @Value("${aws.s3.bucket-name}")
-    private String bucketName;
-
+    private final String bucketName;
     private final String complexFolder = "complejos/";
+
+    public S3StorageService(@Value("${aws.s3.bucket-name}") String bucketName,
+                            @Value("${AWS_ACCESS_KEY_ID}") String awsAccessKeyId,
+                            @Value("${AWS_SECRET_ACCESS_KEY}") String awsSecretAccessKey,
+                            @Value("${AWS_REGION_STATIC}") String awsRegionStatic) {
+
+        this.bucketName = bucketName;
+
+        AWSStaticCredentialsProvider credentialsProvider = new AWSStaticCredentialsProvider(
+                new BasicAWSCredentials(awsAccessKeyId, awsSecretAccessKey)
+        );
+
+        Regions regionEnum;
+        try {
+            regionEnum = Regions.fromName(awsRegionStatic);
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid AWS region provided: {}. Using default US_EAST_1.", awsRegionStatic, e);
+            regionEnum = Regions.US_EAST_1;
+        }
+
+        this.s3Client = AmazonS3ClientBuilder.standard()
+                .withCredentials(credentialsProvider)
+                .withRegion(regionEnum)
+                .build();
+    }
 
     /**
      * Sube una imagen individual a S3 y devuelve las URLs de la versión "original" y "thumbnail".
