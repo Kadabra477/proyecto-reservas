@@ -32,11 +32,17 @@ public class S3StorageService {
     @Value("${aws.s3.bucket-name}")
     private String bucketName;
 
-    @Value("${aws.s3.base-url}")
-    private String s3BaseUrl;
-
     private final String complexFolder = "complejos/";
 
+    /**
+     * Sube una imagen individual a S3 y devuelve las URLs de la versión "original" y "thumbnail".
+     *
+     * @param multipartFile El archivo de imagen a subir.
+     * @param keyPrefix Un prefijo para la clave de S3 (ej. "cover/", "carousel/").
+     * @return Un mapa con las URLs de la imagen original y la miniatura.
+     * @throws IOException Si ocurre un error durante el procesamiento o subida.
+     * @throws IllegalArgumentException Si el archivo no es una imagen válida o está vacío.
+     */
     public Map<String, String> uploadImageWithResolutions(MultipartFile multipartFile, String keyPrefix) throws IOException {
         if (multipartFile == null || multipartFile.isEmpty() || multipartFile.getContentType() == null
                 || !multipartFile.getContentType().startsWith("image/")) {
@@ -97,6 +103,15 @@ public class S3StorageService {
         return imageUrls;
     }
 
+    /**
+     * Sube múltiples archivos de imagen y devuelve las URLs de la versión "original" para cada uno.
+     *
+     * @param multipartFiles Array de archivos de imagen.
+     * @param keyPrefix Un prefijo para la clave de S3 (ej. "carousel/").
+     * @return Lista de mapas, donde cada mapa contiene la URL de la versión original.
+     * @throws IOException Si ocurre un error durante el procesamiento o subida.
+     * @throws IllegalArgumentException Si algún archivo no es una imagen válida o está vacío.
+     */
     public List<Map<String, String>> uploadMultipleImagesWithResolutions(MultipartFile[] multipartFiles, String keyPrefix) throws IOException {
         List<Map<String, String>> uploadedImages = new ArrayList<>();
         if (multipartFiles == null || multipartFiles.length == 0) {
@@ -105,6 +120,7 @@ public class S3StorageService {
 
         for (MultipartFile file : multipartFiles) {
             if (file != null && !file.isEmpty()) {
+                // Solo subimos la versión original para el carrusel para simplificar
                 String originalFilename = file.getOriginalFilename();
                 String baseFileName = UUID.randomUUID().toString() + "_" + System.currentTimeMillis();
                 String originalKey = complexFolder + keyPrefix + "original/" + baseFileName + ".jpg";
@@ -134,6 +150,11 @@ public class S3StorageService {
         return uploadedImages;
     }
 
+    /**
+     * Método para eliminar archivos de S3.
+     *
+     * @param fileUrl La URL del archivo a eliminar en S3.
+     */
     public void deleteFile(String fileUrl) {
         if (fileUrl == null || fileUrl.isBlank() || !fileUrl.contains(bucketName + ".")) {
             log.warn("URL de archivo S3 inválida o no gestionada por este servicio: {}", fileUrl);
