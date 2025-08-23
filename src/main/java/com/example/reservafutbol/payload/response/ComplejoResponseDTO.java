@@ -1,27 +1,27 @@
 package com.example.reservafutbol.payload.response;
 
 import com.example.reservafutbol.Modelo.Complejo;
-import lombok.Data; // Importado para @Data
-import lombok.NoArgsConstructor; // Importado para el constructor sin argumentos
-import lombok.AllArgsConstructor; // Importado para el constructor con todos los argumentos
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 import java.time.LocalTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors; // Se mantiene por si se usa en otros métodos, aunque no en el constructor directo
+import java.util.stream.Collectors;
 
-@Data // Genera getters, setters, toString, equals, hashCode
-@NoArgsConstructor // Genera un constructor sin argumentos
-@AllArgsConstructor // Genera un constructor con todos los argumentos
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ComplejoResponseDTO {
     private Long id;
     private String nombre;
     private String descripcion;
     private String ubicacion;
     private String telefono;
-    // MODIFICADO: Ahora es una lista de URLs, para simplificar el consumo en el frontend
-    private List<String> fotoUrls;
+    private String portadaUrl; // URL de la imagen de portada
+    private List<String> carruselUrls; // URLs de las imágenes del carrusel
     private LocalTime horarioApertura;
     private LocalTime horarioCierre;
     private String propietarioUsername;
@@ -31,7 +31,6 @@ public class ComplejoResponseDTO {
     private Map<String, Boolean> canchaIluminacion;
     private Map<String, Boolean> canchaTecho;
 
-    // Constructor para mapear desde Complejo a ComplejoResponseDTO
     public ComplejoResponseDTO(Complejo complejo) {
         this.id = complejo.getId();
         this.nombre = complejo.getNombre();
@@ -39,13 +38,19 @@ public class ComplejoResponseDTO {
         this.ubicacion = complejo.getUbicacion();
         this.telefono = complejo.getTelefono();
 
-        // MODIFICADO: Mapear el mapa de URLs por resolución a una lista simple
-        // Si el complejo tiene fotoUrlsPorResolucion y contiene una miniatura,
-        // la añadimos a la lista. De lo contrario, la lista estará vacía.
-        if (complejo.getFotoUrlsPorResolucion() != null && complejo.getFotoUrlsPorResolucion().containsKey("thumbnail")) {
-            this.fotoUrls = Collections.singletonList(complejo.getFotoUrlsPorResolucion().get("thumbnail"));
+        // Extrae la URL de la miniatura para la portada
+        if (complejo.getFotoUrlsPorResolucion() != null) {
+            this.portadaUrl = complejo.getFotoUrlsPorResolucion().get("thumbnail");
+        }
+
+        // Extrae las URLs del carrusel
+        if (complejo.getFotoUrlsPorResolucion() != null) {
+            this.carruselUrls = complejo.getFotoUrlsPorResolucion().entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith("carousel_"))
+                    .map(Map.Entry::getValue)
+                    .collect(Collectors.toList());
         } else {
-            this.fotoUrls = Collections.emptyList();
+            this.carruselUrls = Collections.emptyList();
         }
 
         this.horarioApertura = complejo.getHorarioApertura();
@@ -56,8 +61,5 @@ public class ComplejoResponseDTO {
         this.canchaSurfaces = complejo.getCanchaSurfaces();
         this.canchaIluminacion = complejo.getCanchaIluminacion();
         this.canchaTecho = complejo.getCanchaTecho();
-        // NOTA: No se incluye el propietario aquí para la vista pública (solo el username)
     }
-    // El método getFotoUrls() manual ya no es necesario si se usa @Data,
-    // ya que Lombok lo generará automáticamente para el campo 'fotoUrls'.
 }
