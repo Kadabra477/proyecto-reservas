@@ -129,6 +129,7 @@ public class S3StorageService {
 
     /**
      * Sube múltiples archivos de imagen y devuelve las URLs de la versión "original" para cada uno.
+     * Se redimensiona y comprime cada imagen para optimizar el rendimiento del carrusel.
      *
      * @param multipartFiles Array de archivos de imagen.
      * @param keyPrefix Un prefijo para la clave de S3 (ej. "carousel/").
@@ -144,28 +145,27 @@ public class S3StorageService {
 
         for (MultipartFile file : multipartFiles) {
             if (file != null && !file.isEmpty()) {
-                // Solo subimos la versión original para el carrusel para simplificar
-                String originalFilename = file.getOriginalFilename();
                 String baseFileName = UUID.randomUUID().toString() + "_" + System.currentTimeMillis();
-                String originalKey = complexFolder + keyPrefix + "original/" + baseFileName + ".jpg";
+                String originalKey = complexFolder + keyPrefix + baseFileName + ".jpg";
 
                 try (InputStream originalInputStream = file.getInputStream();
-                     ByteArrayOutputStream originalOs = new ByteArrayOutputStream()) {
+                     ByteArrayOutputStream processedOs = new ByteArrayOutputStream()) {
 
                     BufferedImage originalImage = ImageIO.read(originalInputStream);
+
+                    // Redimensionar y comprimir la imagen para el carrusel
                     Thumbnails.of(originalImage)
-                            .scale(1.0)
+                            .width(1920)
                             .outputFormat("jpg")
-                            .outputQuality(0.9)
-                            .toOutputStream(originalOs);
+                            .outputQuality(0.8)
+                            .toOutputStream(processedOs);
 
-                    try (InputStream originalIs = new ByteArrayInputStream(originalOs.toByteArray())) {
-                        ObjectMetadata originalMetadata = new ObjectMetadata();
-                        originalMetadata.setContentLength(originalOs.size());
-                        originalMetadata.setContentType("image/jpeg");
-                        s3Client.putObject(new PutObjectRequest(bucketName, originalKey, originalIs, originalMetadata));
+                    try (InputStream processedIs = new ByteArrayInputStream(processedOs.toByteArray())) {
+                        ObjectMetadata metadata = new ObjectMetadata();
+                        metadata.setContentLength(processedOs.size());
+                        metadata.setContentType("image/jpeg");
+                        s3Client.putObject(new PutObjectRequest(bucketName, originalKey, processedIs, metadata));
 
-                        // Genera la URL de forma segura usando el cliente de S3
                         uploadedImages.add(Map.of("original", s3Client.getUrl(bucketName, originalKey).toString()));
                     }
                 }
